@@ -40,7 +40,7 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     currency: 'heat',
     label: 'Heat',
     short: 'Ht',
-    gloss: 'Thermal energy — what burning releases and melting consumes',
+    gloss: 'Thermal energy - what burning releases and melting consumes',
     vent: 'Scorch marks, flame, a room gone suddenly hot',
     toll: 'Taken from your warmth: chill, then shivering, then the cold that will not lift',
     // Ember, banked rather than flame.
@@ -50,7 +50,7 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     currency: 'motion',
     label: 'Motion',
     short: 'Mo',
-    gloss: 'Kinetic force — pressure, momentum, the blow and the recoil',
+    gloss: 'Kinetic force - pressure, momentum, the blow and the recoil',
     vent: 'Wind, a shove, glass out of its frame',
     toll: "Taken from the blood: grey vision, then a faint, then the heart stumbling",
     // Verdigris on old bronze.
@@ -60,7 +60,7 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     currency: 'charge',
     label: 'Charge',
     short: 'Ch',
-    gloss: 'Electrical and magnetic potential — what a struck flint has and a wet rope does not',
+    gloss: 'Electrical and magnetic potential - what a struck flint has and a wet rope does not',
     vent: 'Arcing, hair lifting, iron dragged off the bench',
     toll: 'Taken from the nerves: numb hands, then palsy, then a fit',
     // Amethyst.
@@ -70,9 +70,9 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     currency: 'light',
     label: 'Light',
     short: 'Li',
-    gloss: 'Radiance — emitted by what burns hot enough, swallowed by what is black',
-    vent: 'Glare, glow, shadows thrown from the wrong side',
-    toll: 'Taken from the eyes: dimming, then afterimages, then dark',
+    gloss: 'Illumination - emitted by what burns hot enough',
+    vent: 'A warm glow, a sickening radiance',
+    toll: 'Taken from the eyes: dimming, then afterimages, then darkness',
     // Old gold leaf, not lamplight.
     hue: 48,
   },
@@ -82,7 +82,7 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     short: 'Ma',
     gloss: 'Substance itself — water, vapour, smoke, anything with weight to spend',
     vent: 'Deposition: frost, fog, salt, a fall of ash on every surface',
-    toll: 'Taken from your flesh: weight you do not get back',
+    toll: 'Taken from the body: weakness, starvation, then disintegration',
     // Slate.
     hue: 214,
   },

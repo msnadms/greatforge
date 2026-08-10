@@ -1,9 +1,9 @@
 import { useMemo, type CSSProperties, type ReactNode } from 'react'
-import { CURRENCY_META } from '../data/currencies'
+import { CURRENCY_META, currencyHue } from '../data/currencies'
 import { conditionSlots } from '../data/spellForms'
 import { useWorkshop } from '../state/useWorkshop'
 import type { SlotReport } from '../lib/reaction'
-import { RING_SLOT_COUNT } from '../types/worldbuilding'
+import { CURRENCIES, RING_SLOT_COUNT, ledgerEntries, type Currency, type Ledger } from '../types/worldbuilding'
 import { ComponentSlot } from './ComponentSlot'
 
 /**
@@ -48,12 +48,6 @@ const NAME_SIZE = 1.8
 /** A name gets its slot's share of the rim, less a gap so neighbours never touch. */
 const NAME_SPAN = DEGREES_PER_SLOT - 6
 
-/** One dash plus one gap, matching `stroke-dasharray` on `.circle__flow`. */
-const DASH_PERIOD = 3
-
-/** Seconds `flow-drift` takes to travel one dash period. */
-const DRIFT_SECONDS = 2.4
-
 interface Point {
   x: number
   y: number
@@ -95,17 +89,102 @@ function namePath(index: number): string {
   return `M ${from.x} ${from.y} A ${radius} ${radius} 0 0 ${flipped ? 0 : 1} ${to.x} ${to.y}`
 }
 
+/** A single reagent's stroke colour on the flow ring, drawn from its own hue. */
+function flowBandColor(hue: number): string {
+  return `hsl(${hue} var(--gem-s-strong) 55%)`
+}
+
+/**
+ * Turns a list of hues into gradient stops, one per hue, evenly spaced so the
+ * first is pure at the literal start of the arc and the last is pure at its
+ * literal end.
+ */
+function flowStops(hues: number[]): { offset: string; color: string }[] {
+  const last = hues.length - 1
+  return hues.map((hue, i) => ({ offset: `${(i / last) * 100}%`, color: flowBandColor(hue) }))
+}
+
+/** The currency holding the largest amount in a ledger, or null if it holds nothing. */
+function dominantCurrency(ledger: Ledger): Currency | null {
+  let best: Currency | null = null
+  let bestAmount = 0
+  for (const [currency, amount] of ledgerEntries(ledger)) {
+    if (amount > bestAmount) {
+      best = currency
+      bestAmount = amount
+    }
+  }
+  return best
+}
+
+/**
+ * Every occupied slot between slot `from` and slot `to` inclusive, in ring
+ * order, coloured by whichever currency it is holding the most of right now:
+ * what it released into the current, or failing that what it received from
+ * it. A hole in between, and a slot presently carrying neither, contribute no
+ * stop.
+ */
+function pathHues(from: number, to: number, reports: Map<number, SlotReport>): number[] {
+  const span = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
+  const hues: number[] = []
+  for (let step = 0; step <= span; step++) {
+    const report = reports.get((from + step) % RING_SLOT_COUNT)
+    if (!report) continue
+    const currency = dominantCurrency(report.released) ?? dominantCurrency(report.received)
+    if (currency) hues.push(currencyHue(currency))
+  }
+  return hues
+}
+
 /**
  * A clockwise arc from one slot to another along the flow ring. The current only
  * ever runs clockwise, so the sweep flag is fixed; the long way round is taken
  * whenever the span passes a half turn.
+ *
+ * The gradient is still, not travelling: it runs once from whatever the slot
+ * at the arc's start is holding most of to whatever the slot at its end is,
+ * through everything standing between, so a crossing through a reagent
+ * currently thick with heat and another thick with motion reads left to right
+ * as one colour giving way to the other, live to this casting rather than
+ * fixed to the catalog.
  */
-function flowPath(from: number, to: number): string {
+interface FlowArc {
+  key: string
+  path: string
+  gradientId: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  stops: { offset: string; color: string }[]
+  title: string
+}
+
+function buildFlowArc(
+  from: number,
+  to: number,
+  amounts: Map<Currency, number>,
+  reports: Map<number, SlotReport>,
+): FlowArc {
+  const currencies = CURRENCIES.filter((currency) => amounts.has(currency))
   const start = slotPoint(from, FLOW_RADIUS)
   const end = slotPoint(to, FLOW_RADIUS)
   const spanSlots = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
   const largeArc = spanSlots * DEGREES_PER_SLOT > 180 ? 1 : 0
-  return `M ${start.x} ${start.y} A ${FLOW_RADIUS} ${FLOW_RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`
+
+  const stops = flowStops(pathHues(from, to, reports))
+
+  return {
+    key: `${from}-${to}`,
+    path: `M ${start.x} ${start.y} A ${FLOW_RADIUS} ${FLOW_RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+    gradientId: `flow-grad-${from}-${to}`,
+    x1: start.x,
+    y1: start.y,
+    x2: end.x,
+    y2: end.y,
+    stops,
+    title: currencies.map((currency) => `${CURRENCY_META[currency].label} ${amounts.get(currency)}`).join(', '),
+  }
 }
 
 export function SpellCircle({ children }: { children: ReactNode }) {
@@ -143,19 +222,6 @@ export function SpellCircle({ children }: { children: ReactNode }) {
   }, [reaction.slots])
 
   /**
-   * A transfer whose ends coincide went the whole way round the ring, which has
-   * no arc to draw; the numbers still show it in the panel.
-   *
-   * Each surviving arc also gets a `phase`: its place in the run of transfers
-   * sharing the same pair of slots, as a fraction of one. Several currencies
-   * routinely cross the same gap, and every arc is now drawn at one width along
-   * the same radius, so their paths are identical to the pixel — without a phase
-   * the last one painted would be the only one anyone ever sees. Offsetting each
-   * by its share of the dash period interleaves the dashes instead, and the
-   * crossing reads as a braid of everything in flight along it. All of them drift
-   * at the same rate, so the offsets are constant and no two ever coincide.
-   */
-  /**
    * The names to engrave on the rim: every slot that has something standing in
    * it, in view mode only. In edit mode the card carries its own name.
    */
@@ -167,21 +233,31 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     })
   }, [mode, draft.slots, componentsById])
 
-  const flows = useMemo(() => {
+  /**
+   * A transfer whose ends coincide went the whole way round the ring, which has
+   * no arc to draw; the numbers still show it in the panel.
+   *
+   * Several currencies routinely cross the same pair of slots, and each one
+   * used to get its own dashed arc, offset in phase so the dashes interleaved
+   * into a braid. That braid is gone: every pair of slots now draws exactly
+   * one arc, its gradient built from what each slot along it is actually
+   * holding most of, per `reports` above, rather than from the currencies
+   * riding between the endpoints. See `buildFlowArc`.
+   */
+  const flows = useMemo<FlowArc[]>(() => {
     const drawn = reaction.transfers.filter((transfer) => transfer.from !== transfer.to)
-    const pairKey = (transfer: { from: number; to: number }) => `${transfer.from}-${transfer.to}`
-
-    const counts = new Map<string, number>()
-    for (const transfer of drawn) counts.set(pairKey(transfer), (counts.get(pairKey(transfer)) ?? 0) + 1)
-
-    const seen = new Map<string, number>()
-    return drawn.map((transfer) => {
-      const key = pairKey(transfer)
-      const index = seen.get(key) ?? 0
-      seen.set(key, index + 1)
-      return { ...transfer, phase: index / (counts.get(key) ?? 1) }
-    })
-  }, [reaction.transfers])
+    const byPair = new Map<string, { from: number; to: number; amounts: Map<Currency, number> }>()
+    for (const transfer of drawn) {
+      const key = `${transfer.from}-${transfer.to}`
+      let entry = byPair.get(key)
+      if (!entry) {
+        entry = { from: transfer.from, to: transfer.to, amounts: new Map() }
+        byPair.set(key, entry)
+      }
+      entry.amounts.set(transfer.currency, (entry.amounts.get(transfer.currency) ?? 0) + transfer.amount)
+    }
+    return Array.from(byPair.values()).map(({ from, to, amounts }) => buildFlowArc(from, to, amounts, reports))
+  }, [reaction.transfers, reports])
 
   return (
     <div className={`circle${mode === 'view' ? ' circle--view' : ''}`}>
@@ -231,22 +307,29 @@ export function SpellCircle({ children }: { children: ReactNode }) {
           </>
         )}
 
+        {flows.length > 0 && (
+          <defs>
+            {flows.map((flow) => (
+              <linearGradient
+                key={flow.gradientId}
+                id={flow.gradientId}
+                gradientUnits="userSpaceOnUse"
+                x1={flow.x1}
+                y1={flow.y1}
+                x2={flow.x2}
+                y2={flow.y2}
+              >
+                {flow.stops.map((stop, index) => (
+                  <stop key={index} offset={stop.offset} stopColor={stop.color} />
+                ))}
+              </linearGradient>
+            ))}
+          </defs>
+        )}
+
         {flows.map((flow) => (
-          <path
-            key={`flow-${flow.from}-${flow.to}-${flow.currency}`}
-            className="circle__flow"
-            d={flowPath(flow.from, flow.to)}
-            style={
-              {
-                '--flow-hue': CURRENCY_META[flow.currency].hue,
-                '--flow-phase': flow.phase * DASH_PERIOD,
-                // Negative delay starts the drift already that far along, which
-                // phases the dashes without changing how fast any arc travels.
-                animationDelay: `${-flow.phase * DRIFT_SECONDS}s`,
-              } as CSSProperties
-            }
-          >
-            <title>{`${CURRENCY_META[flow.currency].label} ${flow.amount}`}</title>
+          <path key={flow.key} className="circle__flow" d={flow.path} stroke={`url(#${flow.gradientId})`}>
+            <title>{flow.title}</title>
           </path>
         ))}
       </svg>

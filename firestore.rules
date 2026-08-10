@@ -1,0 +1,11 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // A workshop belongs to exactly one (anonymous) signed-in user: their profile doc
+    // plus the components and spells beneath it. Nobody else can read or write it.
+    match /users/{uid}/{document=**} {
+      allow read, write: if request.auth != null && request.auth.uid == uid;
+    }
+  }
+}

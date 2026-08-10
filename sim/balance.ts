@@ -36,7 +36,23 @@ import {
 const PLAIN: SpellForm = 'prayer'
 
 let seq = 0
-const CATALOG: MaterialComponent[] = buildSeedComponents(() => `c${seq++}`, 0)
+
+/**
+ * `rare` and `singular` reagents are exceptional by design (see the note at the
+ * top of `seedComponents.ts`) rather than part of the tuned envelope: they are
+ * priced for how hard they are to come by, not for how often a ring should see
+ * them, and a `singular` reagent by definition exists once in the whole catalog.
+ * Every table and probe below is a statement about the catalog any player
+ * starts with, so it is measured on `common`/`uncommon` only. A careless player
+ * who happens to be carrying a `singular` reagent *should* thread a free ring
+ * more easily than this harness allows for; that is the reward, not a balance
+ * defect, and it is exactly what `naiveChainProbe` would otherwise be unable to
+ * tell apart from the autopilot exploit it exists to catch.
+ */
+const FULL_CATALOG: MaterialComponent[] = buildSeedComponents(() => `c${seq++}`, 0)
+const CATALOG: MaterialComponent[] = FULL_CATALOG.filter(
+  (c) => c.rarity !== 'rare' && c.rarity !== 'singular',
+)
 
 /**
  * The catalog split by the one question the builders ask of it, through the same
@@ -772,6 +788,8 @@ formReport()
 formsOnTheirOwnGround()
 
 // One ring, resolved and printed slot by slot, to read against the laws as written.
+// Drawn from the full catalog rather than the balance-envelope `CATALOG`, since it
+// is illustrative rather than a measurement and two of its reagents are `rare`.
 const worked: Placement[] = [
   'Falling Weight',
   'Lodestone',
@@ -781,7 +799,7 @@ const worked: Placement[] = [
   'Hoarfrost',
 ].map((name, slotIndex) => ({
   slotIndex,
-  component: CATALOG.find((c) => c.name === name)!,
+  component: FULL_CATALOG.find((c) => c.name === name)!,
 }))
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']

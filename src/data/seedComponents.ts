@@ -29,9 +29,13 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              into mass, charge and the return trip into light and motion; the
  *              rest still move the currency you need, just at a cost, which is
  *              what makes knowing the few good routes worth learning rather than
- *              a thing the ring does for you
+ *              a thing the ring does for you. Tungsten Foil, priced `singular`,
+ *              reaches two of those currencies from one input at once, doing at
+ *              a slot what two `rare` converters would together
  *   Relays     give back the whole of what they take, so current crosses them
- *              for nothing — the wire of the circle
+ *              for nothing, the wire of the circle. Kilonova Fragment, the one
+ *              priced `singular`, is the only one that carries two currencies
+ *              at once, both at the ceiling
  *
  *   Sinks      swallow and give nothing back. Two of them, and they were added
  *              for the dirge: that form is spared the spill only while a sink
@@ -66,16 +70,19 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *  - Only seven reagents in the catalog — three sources, four fuels — never cost
  *    anything to place, and stacking every one of them still falls one short of
  *    a full ring. Reaching slot VIII always means taking on at least one
- *    converter, and the catalog only tells you which ones are worth it by
- *    naming their numbers; nothing about which fifth of them turn a profit is
- *    stated anywhere else. August 2026: this was not always true. Every fuel and
- *    converter used to hand back more than it took, so the ring could not run
- *    out of current, only out of matching currencies — an eight-reagent working
- *    was reachable by grabbing anything that fit the last slot's colour, with no
- *    penalty for not knowing the catalog. It reached zero toll on every attempt.
- *    Thinning the free reagents to seven and making most conversions cost more
- *    than they return is what makes that no longer true; see `sim/balance.ts`'s
- *    `naiveChainProbe`.
+ *    converter, and rarity now marks which of them turn a profit: seven are
+ *    priced `rare`, the reliable route into mass, charge and the way back to
+ *    light and motion, and two rarer still are priced `singular`, one-off
+ *    reagents that do at a single slot what two `rare` reagents would together,
+ *    each grounded in a real mechanism that has only ever gone right once. The
+ *    rest are `common` regardless of the currency they move. August 2026: this
+ *    was not always true. Every fuel and converter used to hand back more than
+ *    it took, so the ring could not run out of current, only out of matching
+ *    currencies — an eight-reagent working was reachable by grabbing anything
+ *    that fit the last slot's colour, with no penalty for not knowing the
+ *    catalog. It reached zero toll on every attempt. Thinning the free reagents
+ *    to seven and making most conversions cost more than they return is what
+ *    makes that no longer true; see `sim/balance.ts`'s `naiveChainProbe`.
  *
  * These are example data, not fixed rules; they can be edited and deleted like
  * anything the user authors.
@@ -97,7 +104,7 @@ const SEEDS: SeedSpec[] = [
       'A lead sinker on a cord, run over a pulley and cocked at the ceiling. Released, it descends the whole height of the room at a steady rate, and the cord can be trained onto whatever needs turning.',
     demands: {},
     yields: { motion: 10 },
-    rarity: 'common',
+    rarity: 'uncommon',
   },
   {
     name: 'Burning Glass',
@@ -132,7 +139,7 @@ const SEEDS: SeedSpec[] = [
       'Iron oxide and aluminium filings, stirred dry in equal measure. Nothing short of a burning ribbon will start it. Once started it runs white hot, needs no air, and burns down through the plate it is standing on.',
     demands: { heat: 6 },
     yields: { heat: 10 },
-    rarity: 'rare',
+    rarity: 'common',
   },
   {
     name: 'Magnesium Ribbon',
@@ -156,7 +163,7 @@ const SEEDS: SeedSpec[] = [
       'Needles of ice grown overnight on metal and wood, scraped off before sunrise. They form straight out of the vapour in the air without passing through water first, so the cold that makes them is drawn from the air, and their whole weight was air an hour before.',
     demands: { heat: 8 },
     yields: { mass: 12 },
-    rarity: 'common',
+    rarity: 'rare',
   },
   {
     name: 'Lodestone',
@@ -164,7 +171,7 @@ const SEEDS: SeedSpec[] = [
       'Magnetite that has taken a natural magnetism, strong enough to hold a nail through a sheet of paper. Drawn past a coil of wire it raises a current in the wire, but only while it is moving.',
     demands: { motion: 8 },
     yields: { charge: 12 },
-    rarity: 'uncommon',
+    rarity: 'rare',
   },
   {
     name: 'Foxfire',
@@ -180,7 +187,23 @@ const SEEDS: SeedSpec[] = [
       'Grown out of the cooling melt in stepped square terraces, with an oxide film running pink and gold across the faces. It is repelled by a magnet of either pole, and a small enough crystal will drift away from one across a smooth table.',
     demands: { charge: 8 },
     yields: { motion: 10 },
-    rarity: 'uncommon',
+    rarity: 'rare',
+  },
+  {
+    name: 'Light Mill',
+    description:
+      'A glass bulb blown near enough to a true vacuum to hold it, with four vanes on a needle point inside, black on one face and silver on the other. Strong light sets the vanes spinning on their own, faster the harder it falls, and they stop dead the instant a shadow crosses the glass. Blowing one thin enough to hold that vacuum ruins nine bulbs in ten.',
+    demands: { light: 8 },
+    yields: { motion: 12 },
+    rarity: 'rare',
+  },
+  {
+    name: 'Quartz Anvil',
+    description:
+      'A block of clear quartz set beneath a lead striker cast new for the purpose. Dropped its own height, the striker collapses into a jolt of current rather than a crack, and the quartz takes the blow no worse than a stone shrugging off rain. The striker does not survive its own strike, and a fresh one has to be cast and cooled before the next blow can be paid for.',
+    demands: { mass: 8 },
+    yields: { charge: 12 },
+    rarity: 'rare',
   },
   {
     name: 'Clock Spring',
@@ -188,7 +211,7 @@ const SEEDS: SeedSpec[] = [
       'A flat steel ribbon wound tight against a sealed brass bellows. Warmth swells the bellows, which takes up the winding a notch at a time and holds it there, but a bellows this size only ever takes up a little before it is fighting its own spring back.',
     demands: { heat: 5 },
     yields: { motion: 4 },
-    rarity: 'uncommon',
+    rarity: 'common',
   },
   {
     name: 'Black Powder',
@@ -204,7 +227,7 @@ const SEEDS: SeedSpec[] = [
       'Kept under water, cut under water, and handled wet. Left dry it takes fire from the air itself within a minute, without anything touching it. Most of what it is goes up as smoke; what is left is a hard white light and a heat that sticks to whatever it has landed on.',
     demands: { mass: 6 },
     yields: { light: 3, heat: 3 },
-    rarity: 'rare',
+    rarity: 'common',
   },
   {
     name: 'Jet',
@@ -212,12 +235,12 @@ const SEEDS: SeedSpec[] = [
       'Fossilised wood, black and polished, light enough to float in brine and soft enough to carve with a knife. It takes a flame readily for a mineral, but most of the coal it wants goes into keeping itself lit rather than into the small bright flame it shows.',
     demands: { heat: 6 },
     yields: { light: 5 },
-    rarity: 'uncommon',
+    rarity: 'common',
   },
   {
-    name: 'Lampblack',
+    name: 'Bone Black',
     description:
-      'Soot collected off a smoking wick and packed into a cake. It is the blackest substance to be had, reflecting almost nothing that falls on it, but a cake this small only ever gives back a fraction of the light it swallowed, as heat.',
+      'Bone charred in a shut kiln until only the carbon frame is left, then ground to powder. A deep warm black rather than a true one, and a cake this size only ever gives back a fraction of the light it swallows, as heat.',
     demands: { light: 7 },
     yields: { heat: 6 },
     rarity: 'common',
@@ -244,7 +267,7 @@ const SEEDS: SeedSpec[] = [
       'Beads of pale resin from a cut Boswellia trunk, hardened where they ran. Scentless in the hand. Set on a coal it goes almost entirely to a thick white smoke that hangs low and takes a long while to clear, most of it condensing back to a resin heavier than what fed the coal.',
     demands: { heat: 7 },
     yields: { mass: 9 },
-    rarity: 'uncommon',
+    rarity: 'rare',
   },
   {
     name: 'Cinnabar',
@@ -252,7 +275,7 @@ const SEEDS: SeedSpec[] = [
       'Mercury ore, ground fine to the vermilion that manuscript painters kept for important words. Roasted hard enough it gives up the metal as a vapour, which comes off bright and settles heavy, but most of the roasting heat goes into the air around it.',
     demands: { heat: 8 },
     yields: { mass: 5, light: 2 },
-    rarity: 'rare',
+    rarity: 'common',
   },
   {
     name: 'Tourmaline',
@@ -260,7 +283,7 @@ const SEEDS: SeedSpec[] = [
       'A stubby green crystal, striated down its length. Warmed in the ash it takes a charge along its axis, drawing ash to one end and pushing it off the other, but only a fraction of the warmth put into it survives as the charge it holds.',
     demands: { heat: 7 },
     yields: { charge: 6 },
-    rarity: 'uncommon',
+    rarity: 'common',
   },
   {
     name: 'Amber',
@@ -268,7 +291,7 @@ const SEEDS: SeedSpec[] = [
       'Fossil tree resin, warm to the hand and near enough as light as wood. Rubbed hard on wool it takes a charge that will lift hair and dust off a bench, but most of the rubbing is lost to the warmth of the hand rather than kept as the charge.',
     demands: { motion: 7 },
     yields: { charge: 6 },
-    rarity: 'uncommon',
+    rarity: 'common',
   },
   {
     name: 'Voltaic Pile',
@@ -276,7 +299,7 @@ const SEEDS: SeedSpec[] = [
       'Discs of zinc and silver stacked in alternation, each pair divided by cloth soaked in brine. The stack gives a steady current with nothing moving in it at all, but the zinc it eats through carries far more than the current it hands back.',
     demands: { mass: 7 },
     yields: { charge: 5 },
-    rarity: 'rare',
+    rarity: 'common',
   },
   {
     name: 'Fulgurite',
@@ -284,7 +307,7 @@ const SEEDS: SeedSpec[] = [
       'A brittle glass tube, rough on the outside and smooth within, formed where lightning struck wet sand and fused a channel through it. Current run through it again brings back a little of what made it: a flash along the bore, and a fraction of the heat it took to fuse the glass in the first place.',
     demands: { charge: 8 },
     yields: { heat: 5, light: 2 },
-    rarity: 'rare',
+    rarity: 'common',
   },
 
   // ---- Relays: they hand back the whole of what they were given ----
@@ -326,7 +349,7 @@ const SEEDS: SeedSpec[] = [
       'A pale yellow alloy of gold and silver, drawn into wire. It does not tarnish and offers almost no resistance, so a current put in at one end arrives whole at the other.',
     demands: { charge: 9 },
     yields: { charge: 9 },
-    rarity: 'rare',
+    rarity: 'uncommon',
   },
   {
     name: 'Nautilus Shell',
@@ -355,7 +378,30 @@ const SEEDS: SeedSpec[] = [
       'Clear crystals that hold their water loosely. Warmed a little past blood heat they collapse into that water, and they take a great deal of warmth to do it, so the jar stands cold against the hand the whole while it is melting.',
     demands: { heat: 8 },
     yields: {},
-    rarity: 'uncommon',
+    rarity: 'common',
+  },
+
+  // ---- Singular: one apiece, doing at a single slot what two rare reagents ----
+  // would together. Priced `singular` rather than made mechanically unique, since
+  // nothing in the resolver reads rarity; the catalog just does not carry a second.
+  // Grounded the same way the rest of the catalog is, in a real mechanism rather
+  // than an invented one, just one that has only ever been produced or recovered
+  // once.
+  {
+    name: 'Tungsten Foil',
+    description:
+      "Cut three atoms thick from the one boule of isotopically pure tungsten anyone has managed to grow. Hard enough light passing near one of its nuclei does not pass through it: the photon becomes an electron and a positron outright, matched in mass and opposite in charge, out of nothing but its own energy. Every foil grown since has come out a few atoms too thick or too impure to do it as cleanly, and none has matched this one's yield.",
+    demands: { light: 8 },
+    yields: { mass: 6, charge: 6 },
+    rarity: 'singular',
+  },
+  {
+    name: 'Kilonova Fragment',
+    description:
+      'A pinch of heavy metal pulled from inside an iron meteorite, its isotope ratios matching nothing forged in any star still burning. The leading account has it forged in the collision of two neutron stars, in the instant before the wreck flew outward too fast to keep crushing itself, then cooled across light years into matter heavier than iron has any right to be. Drawn out into wire it carries a full charge and a full load of matter down its whole length, neither troubling the other, and there is only enough of it, from the one fragment ever recovered, to draw the single length.',
+    demands: { charge: 12, mass: 12 },
+    yields: { charge: 12, mass: 12 },
+    rarity: 'singular',
   },
 ]
 

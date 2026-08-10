@@ -44,9 +44,16 @@ import type { WorkshopRepository } from './repository'
  * still authorable and not shipped. Version 5 adds the two sinks, which forms made
  * necessary: a dirge is spared the spill only while a sink stands in the ring, and
  * with none in the catalog that condition could not be met without the user
- * authoring one first.
+ * authoring one first. Version 6 makes rarity a power signal — common for anything
+ * a ring can be built from, uncommon for solid but unremarkable, rare for the five
+ * converters that are the only reliable route into mass, charge and the way back
+ * to light and motion — and renames the light-to-heat converter to Bone Black,
+ * since it shared a name with the light sink. Version 7 adds two more `rare`
+ * converters (Light Mill, Quartz Anvil) filling the two good routes rarity left
+ * uncovered, and the catalog's first two `singular` reagents (Tungsten Foil,
+ * Kilonova Fragment), each doing at one slot what two `rare` reagents do together.
  */
-const SEED_VERSION = 5
+const SEED_VERSION = 7
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>

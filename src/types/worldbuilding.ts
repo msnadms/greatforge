@@ -36,10 +36,14 @@ export const SPELL_FORMS = [
 export type SpellForm = (typeof SPELL_FORMS)[number]
 
 /**
- * How hard the material is to come by or to make — a fact about the world, not
- * a dial on the magic. The reaction never reads it, and it deliberately does not
- * track power: a rare reagent is awkward to source, not necessarily stronger, and
- * balancing the catalog against rarity would be balancing against the wrong axis.
+ * How hard the material is to come by or to make, and — since August 2026 — a
+ * power signal too: the reaction still never reads it, but the catalog now tunes
+ * it so scarcity tracks strength. Common is the baseline any ring can be built
+ * from; uncommon is solid but unremarkable; rare is a reagent worth building a
+ * ring around, priced in how hard it is to get rather than in a stat the resolver
+ * sees. Singular sits above that: at most one or two in the whole catalog, each
+ * doing at a single slot what two `rare` reagents would together, and each
+ * grounded in a real mechanism that has only ever been pulled off once.
  */
 export const RARITIES = ['common', 'uncommon', 'rare', 'singular'] as const
 

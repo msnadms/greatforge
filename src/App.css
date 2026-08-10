@@ -279,6 +279,21 @@
   stroke-linecap: round;
 }
 
+/*
+ * The manifestation, drawn leaving through the mouth. One curve per currency
+ * still in flight when the ring closed, its length reading the amount
+ * (`manifestLinePath`) and its colour the currency's own hue, same as a flow
+ * arc's stops — but the line's own gradient fades its opacity out along its
+ * length rather than shifting hue, since it carries one currency rather than
+ * a walk across several. Slightly thinner than a flow arc for the same reason.
+ */
+.circle__manifest {
+  fill: none;
+  stroke-width: 0.32;
+  stroke-linecap: round;
+  opacity: 0.92;
+}
+
 .circle__hub {
   position: absolute;
   left: 50%;

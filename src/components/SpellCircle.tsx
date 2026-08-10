@@ -48,6 +48,30 @@ const NAME_SIZE = 1.8
 /** A name gets its slot's share of the rim, less a gap so neighbours never touch. */
 const NAME_SPAN = DEGREES_PER_SLOT - 6
 
+/**
+ * The manifestation's exit lines start on the flow ring, the same radius the
+ * current itself is drawn at (`FLOW_RADIUS`), so a line reads as that current
+ * carrying on rather than as a mark hung in the margin. Anchoring further out,
+ * on one of the decorative rings, left every line looking cut loose from the
+ * thing it is supposed to be leaving.
+ */
+const MANIFEST_INNER = FLOW_RADIUS
+
+/**
+ * Shortest and longest an exit line is drawn, in stage units. The minimum
+ * clears every ring between the flow radius and the rim (about 13 units) with
+ * room to spare, so even the smallest manifestation is never left stranded
+ * under the engraving it is supposed to be crossing.
+ */
+const MANIFEST_MIN_LENGTH = 22
+const MANIFEST_MAX_LENGTH = 62
+
+/** Stage units of length per unit of currency manifested. */
+const MANIFEST_LENGTH_SCALE = 3.2
+
+/** Degrees between neighbouring exit lines' headings, so several currencies fan out from their shared origin rather than riding one another. */
+const MANIFEST_FAN_STEP = 20
+
 interface Point {
   x: number
   y: number
@@ -187,6 +211,112 @@ function buildFlowArc(
   }
 }
 
+/** A clockwise arc between two slots at a given radius — the flow ring's geometry, without a flow's gradient. */
+function ringArcPath(from: number, to: number, radius: number): string {
+  const start = slotPoint(from, radius)
+  const end = slotPoint(to, radius)
+  const spanSlots = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
+  const largeArc = spanSlots * DEGREES_PER_SLOT > 180 ? 1 : 0
+  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`
+}
+
+interface ManifestLine {
+  currency: Currency
+  amount: number
+  path: string
+  gradientId: string
+  x1: number
+  y1: number
+  x2: number
+  y2: number
+  color: string
+}
+
+/**
+ * Slot VIII's own angle, not the mouth's: the current's carry line runs
+ * clockwise and slot VIII is the last stop on it before the ring closes, so
+ * this is where that line actually ends. The mouth is the seam half a slot
+ * further on, which is where the ring's surplus crosses to leave, but that
+ * point sits between two slots and nothing is ever drawn reaching it — using
+ * it left every exit line appearing to start short of the flow it was meant
+ * to continue.
+ */
+const MANIFEST_ANGLE = -90 + (RING_SLOT_COUNT - 1) * DEGREES_PER_SLOT
+
+/**
+ * One shared point for every manifesting currency's line, on the flow ring
+ * directly under slot VIII. All of a ring's surplus leaves the same way, so
+ * every line starts there and none anywhere else — fixed regardless of which
+ * slots are filled, so a hole at slot VIII never strands a line at some
+ * other point on the rim.
+ */
+const MANIFEST_ORIGIN = radialPoint(MANIFEST_ANGLE, MANIFEST_INNER)
+
+/**
+ * The current runs clockwise, so this is the direction it is travelling in
+ * the instant it reaches `MANIFEST_ORIGIN` — tangent to the ring, not radial.
+ * Every exit line's first control point sits out along this same heading, so
+ * a line leaves the origin still moving the way the current was, the same
+ * heading for all of them, and only bends outward toward its own after that.
+ * Departing straight outward instead — radial from the first instant — met
+ * the tangential current at a right angle, which is what read as a hard
+ * corner rather than a line the current was still carrying.
+ */
+const MANIFEST_TANGENT = (() => {
+  const rad = (MANIFEST_ANGLE * Math.PI) / 180
+  return { x: -Math.sin(rad), y: Math.cos(rad) }
+})()
+
+/**
+ * Rotates the fan clockwise off slot VIII's own radial line, which is exactly
+ * where its engraved name runs in view mode (`namePath`, centred on that same
+ * angle). Without this the middle of the fan drew straight out over the
+ * title; the tangent departure already carries every line toward the mouth,
+ * this just gives that carry enough room to clear the name before the lines
+ * bend back out to their own headings.
+ */
+const MANIFEST_HEADING_BIAS = 30
+
+/**
+ * A curved line for one currency's manifestation, running out from
+ * `MANIFEST_ORIGIN` — the one point every line shares, not a point of its
+ * own. `fanIndex`/`fanCount` steer the heading each line ends on, away from
+ * the ring; every line leaves the origin on `MANIFEST_TANGENT` and sweeps
+ * toward that heading over its whole length rather than in one sharp turn,
+ * which is what keeps the bend gentle instead of a corner. Length is the
+ * only channel amount is drawn on, matching `.circle__flow`, which holds
+ * width fixed for the same reason: the number is on the tooltip and in the
+ * panel, and two encodings of the same amount would only disagree with each
+ * other under rounding.
+ */
+function manifestLinePath(fanIndex: number, fanCount: number, amount: number): { path: string; end: Point } {
+  const spread = (fanCount - 1) * MANIFEST_FAN_STEP
+  const centre = MANIFEST_ANGLE + MANIFEST_HEADING_BIAS
+  const heading = centre - spread / 2 + fanIndex * MANIFEST_FAN_STEP
+  const length = Math.min(MANIFEST_MAX_LENGTH, MANIFEST_MIN_LENGTH + amount * MANIFEST_LENGTH_SCALE)
+
+  const c1 = {
+    x: MANIFEST_ORIGIN.x + MANIFEST_TANGENT.x * length * 0.5,
+    y: MANIFEST_ORIGIN.y + MANIFEST_TANGENT.y * length * 0.5,
+  }
+
+  const rad = (heading * Math.PI) / 180
+  const dir = { x: Math.cos(rad), y: Math.sin(rad) }
+  const c2 = {
+    x: MANIFEST_ORIGIN.x + dir.x * length * 0.62,
+    y: MANIFEST_ORIGIN.y + dir.y * length * 0.62,
+  }
+  const end = {
+    x: MANIFEST_ORIGIN.x + dir.x * length,
+    y: MANIFEST_ORIGIN.y + dir.y * length,
+  }
+
+  return {
+    path: `M ${MANIFEST_ORIGIN.x} ${MANIFEST_ORIGIN.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
+    end,
+  }
+}
+
 export function SpellCircle({ children }: { children: ReactNode }) {
   const {
     draft,
@@ -259,6 +389,74 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     return Array.from(byPair.values()).map(({ from, to, amounts }) => buildFlowArc(from, to, amounts, reports))
   }, [reaction.transfers, reports])
 
+  /** The last slot holding a reagent, in ring order — where the ring's own current actually ends. -1 for a cold circle. */
+  const lastSlot = useMemo(
+    () => placements.reduce((max, p) => Math.max(max, p.slotIndex), -1),
+    [placements],
+  )
+
+  /**
+   * Whichever currency the last node is carrying most of, the same call the
+   * flow arcs' own gradients make (`pathHues`). The exit line for that
+   * currency is painted last, so wherever the lines overlap, the one on top
+   * is never a colour the current standing right there was not actually
+   * carrying.
+   */
+  const lastNodeCurrency = useMemo(() => {
+    const report = lastSlot >= 0 ? reports.get(lastSlot) : undefined
+    if (!report) return null
+    return dominantCurrency(report.released) ?? dominantCurrency(report.received)
+  }, [lastSlot, reports])
+
+  /** What the ring gave up, drawn leaving through the mouth. See `manifestLinePath`. */
+  const manifestLines = useMemo<ManifestLine[]>(() => {
+    const entries = ledgerEntries(reaction.manifestation)
+    return entries.map(([currency, amount], index) => {
+      const { path, end } = manifestLinePath(index, entries.length, amount)
+      return {
+        currency,
+        amount,
+        path,
+        gradientId: `manifest-grad-${currency}`,
+        x1: MANIFEST_ORIGIN.x,
+        y1: MANIFEST_ORIGIN.y,
+        x2: end.x,
+        y2: end.y,
+        color: flowBandColor(currencyHue(currency)),
+      }
+    })
+  }, [reaction.manifestation])
+
+  /**
+   * `manifestLines` in paint order rather than fan order: the same lines, the
+   * same headings, just with the last node's own currency moved to the end
+   * so it renders on top. Kept separate from `manifestLines` itself so which
+   * currency happens to be on top this casting never shuffles the fan's
+   * layout, which is fixed to `CURRENCIES` order regardless.
+   */
+  const manifestPaintOrder = useMemo(
+    () => [...manifestLines].sort((a, b) => Number(a.currency === lastNodeCurrency) - Number(b.currency === lastNodeCurrency)),
+    [manifestLines, lastNodeCurrency],
+  )
+
+  /**
+   * The exit lines always start at slot VIII, but the ring's own current does
+   * not always reach that far — a reagent at slot V with nothing placed past
+   * it leaves nothing drawn between there and the mouth. This carries the
+   * flow ring on from the last occupied slot to slot VIII at the same radius,
+   * in the last node's own colour (see `lastNodeCurrency`), so the exit lines
+   * still read as leaving that current rather than sprouting from an empty
+   * stretch of rim. Drawn under the same class as an ordinary flow arc, since
+   * it is standing in for one.
+   */
+  const manifestBridge = useMemo(() => {
+    if (manifestLines.length === 0) return null
+    if (lastSlot < 0 || lastSlot >= RING_SLOT_COUNT - 1) return null
+    const fallback = manifestLines.reduce((best, line) => (line.amount > best.amount ? line : best))
+    const color = lastNodeCurrency ? flowBandColor(currencyHue(lastNodeCurrency)) : fallback.color
+    return { path: ringArcPath(lastSlot, RING_SLOT_COUNT - 1, FLOW_RADIUS), color }
+  }, [manifestLines, lastSlot, lastNodeCurrency])
+
   return (
     <div className={`circle${mode === 'view' ? ' circle--view' : ''}`}>
       <svg className="circle__engraving" viewBox="0 0 100 100" role="presentation" aria-hidden="true">
@@ -330,6 +528,36 @@ export function SpellCircle({ children }: { children: ReactNode }) {
         {flows.map((flow) => (
           <path key={flow.key} className="circle__flow" d={flow.path} stroke={`url(#${flow.gradientId})`}>
             <title>{flow.title}</title>
+          </path>
+        ))}
+
+        {manifestBridge && (
+          <path className="circle__flow" d={manifestBridge.path} stroke={manifestBridge.color} />
+        )}
+
+        {manifestLines.length > 0 && (
+          <defs>
+            {manifestLines.map((line) => (
+              <linearGradient
+                key={line.gradientId}
+                id={line.gradientId}
+                gradientUnits="userSpaceOnUse"
+                x1={line.x1}
+                y1={line.y1}
+                x2={line.x2}
+                y2={line.y2}
+              >
+                <stop offset="0%" stopColor={line.color} stopOpacity="1" />
+                <stop offset="55%" stopColor={line.color} stopOpacity="0.55" />
+                <stop offset="100%" stopColor={line.color} stopOpacity="0.08" />
+              </linearGradient>
+            ))}
+          </defs>
+        )}
+
+        {manifestPaintOrder.map((line) => (
+          <path key={line.currency} className="circle__manifest" d={line.path} stroke={`url(#${line.gradientId})`}>
+            <title>{`${CURRENCY_META[line.currency].label} ${line.amount}`}</title>
           </path>
         ))}
       </svg>

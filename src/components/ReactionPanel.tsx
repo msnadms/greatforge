@@ -19,9 +19,11 @@ function LedgerReadout({ ledger, describe }: { ledger: Ledger; describe: 'vent' 
           <div key={currency} className="ledger__row">
             <dt title={meta.gloss}>{meta.label}</dt>
             <dd>
+              {/* Hue only: the saturation and lightness are theme tokens in the
+                  stylesheet, so a bar cannot drift out of the palette. */}
               <span
                 className="ledger__bar"
-                style={{ width: `${(amount / peak) * 100}%`, background: `hsl(${meta.hue} 70% 55%)` }}
+                style={{ width: `${(amount / peak) * 100}%`, '--bar-hue': meta.hue } as CSSProperties}
               />
               <span className="ledger__amount">{amount}</span>
             </dd>
@@ -34,27 +36,21 @@ function LedgerReadout({ ledger, describe }: { ledger: Ledger; describe: 'vent' 
 }
 
 export function ReactionPanel() {
-  const { reaction } = useWorkshop()
-  const form = FORM_META[reaction.form]
+  const { draft, reaction } = useWorkshop()
+  const form = FORM_META[draft.form]
   const shortSlots = reaction.slots.filter((slot) => ledgerEntries(slot.shortfall).length > 0)
 
   return (
     <section className="panel reaction">
       <h2 className="panel__title">The reaction</h2>
 
-      {/* The form is an input to the resolver, so what it does is stated here, next
-          to the numbers it produced — the same reason the laws are on the page. */}
+      {/* The form is not an input to the resolver, so it is named here as what the
+          working is rather than as anything the numbers below depend on. */}
       <div className="reaction__form">
         <p className="reaction__formLine">
-          Resolved as {form.article} <strong>{form.label.toLowerCase()}</strong>
-          {reaction.named ? (
-            <>
-              , naming <strong>{CURRENCY_META[reaction.named].label.toLowerCase()}</strong>
-            </>
-          ) : null}
-          .
+          Spoken as {form.article} <strong>{form.label.toLowerCase()}</strong>.
         </p>
-        <p className="reaction__formRule">{form.rule}</p>
+        <p className="reaction__formRule">{form.gloss}</p>
       </div>
 
       {reaction.filled === 0 ? (
@@ -118,7 +114,7 @@ export function ReactionPanel() {
                 style={
                   {
                     flexGrow: amount,
-                    background: `hsl(${CURRENCY_META[currency].hue} 45% 45% / 0.55)`,
+                    '--bar-hue': CURRENCY_META[currency].hue,
                   } as CSSProperties
                 }
               />
@@ -131,11 +127,8 @@ export function ReactionPanel() {
         <summary>The {LAWS.length} laws</summary>
         <ol>
           {LAWS.map((law) => (
-            <li key={law.title} className={law.title === form.bends ? 'reaction__law--bent' : ''}>
+            <li key={law.title}>
               <strong>{law.title}.</strong> {law.body}
-              {law.title === form.bends ? (
-                <span className="reaction__bent"> Bent by this {form.label.toLowerCase()}.</span>
-              ) : null}
             </li>
           ))}
         </ol>

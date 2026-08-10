@@ -21,7 +21,17 @@ export interface CurrencyMeta {
   vent: string
   /** What the caster's body pays when the ring comes up short. */
   toll: string
-  /** CSS hue used for slot glow, flow arcs and ledger chips. */
+  /**
+   * CSS hue used for slot glow, flow arcs and ledger chips. Saturation and
+   * lightness are not stored with it — those are the `--gem-s` / `--gem-l`
+   * tokens in `index.css`, so both themes stay tunable from one place and a hue
+   * here only ever decides *which* pigment, never how loud it is.
+   *
+   * The five are spaced wider apart than a bright palette would need. They are
+   * rendered at around a third saturation, and muted colours lose their identity
+   * to each other long before saturated ones do: ember and old gold thirty
+   * degrees apart both read as plain brown once the saturation comes off.
+   */
   hue: number
 }
 
@@ -33,7 +43,8 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     gloss: 'Thermal energy — what burning releases and melting consumes',
     vent: 'Scorch marks, flame, a room gone suddenly hot',
     toll: 'Taken from your warmth: chill, then shivering, then the cold that will not lift',
-    hue: 22,
+    // Ember, banked rather than flame.
+    hue: 10,
   },
   motion: {
     currency: 'motion',
@@ -42,7 +53,8 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     gloss: 'Kinetic force — pressure, momentum, the blow and the recoil',
     vent: 'Wind, a shove, glass out of its frame',
     toll: "Taken from the blood: grey vision, then a faint, then the heart stumbling",
-    hue: 168,
+    // Verdigris on old bronze.
+    hue: 158,
   },
   charge: {
     currency: 'charge',
@@ -51,7 +63,8 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     gloss: 'Electrical and magnetic potential — what a struck flint has and a wet rope does not',
     vent: 'Arcing, hair lifting, iron dragged off the bench',
     toll: 'Taken from the nerves: numb hands, then palsy, then a fit',
-    hue: 268,
+    // Amethyst.
+    hue: 278,
   },
   light: {
     currency: 'light',
@@ -60,7 +73,8 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     gloss: 'Radiance — emitted by what burns hot enough, swallowed by what is black',
     vent: 'Glare, glow, shadows thrown from the wrong side',
     toll: 'Taken from the eyes: dimming, then afterimages, then dark',
-    hue: 52,
+    // Old gold leaf, not lamplight.
+    hue: 48,
   },
   mass: {
     currency: 'mass',
@@ -69,7 +83,8 @@ export const CURRENCY_META: Record<Currency, CurrencyMeta> = {
     gloss: 'Substance itself — water, vapour, smoke, anything with weight to spend',
     vent: 'Deposition: frost, fog, salt, a fall of ash on every surface',
     toll: 'Taken from your flesh: weight you do not get back',
-    hue: 210,
+    // Slate.
+    hue: 214,
   },
 }
 
@@ -79,19 +94,21 @@ export const CURRENCY_LIST: CurrencyMeta[] = CURRENCIES.map((c) => CURRENCY_META
  * The whole system, stated. A hard magic is one the reader can do arithmetic in,
  * so these are shown in the app rather than kept in a designer's notebook.
  *
- * These describe the circle itself, which nobody casts: every form bends one of
- * them, the prayer included. The last law says so and names the price. The bends
- * themselves live in `data/spellForms.ts`, one per form, and a form's `bends`
- * field cites a law by the titles here — so renaming one means editing both files.
+ * These hold without exception. Forms used to bend them, one law apiece, and a
+ * seventh law stated that bargain; forms are now the manner a working is spoken in
+ * and nothing else, so every law here is simply true and the seventh is gone.
+ *
+ * They are the statement of what `lib/reaction.ts` does. Changing a resolver rule
+ * means editing this array in the same change, or the app is lying to the user.
  */
 export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   {
     title: 'Nothing is made',
-    body: 'Every unit in the circle came out of a stone, and nothing in flight is ever multiplied: a slot hands on what it was given, less what the crossing took. What a material has to give it was already carrying, and it gives it out of its own substance — a stone that has spoken is spent.',
+    body: 'Every unit in the circle came out of a reagent, and nothing in flight is ever multiplied: a slot hands on what it was given, less what the crossing took. What a material has to give it was already carrying, and it gives it out of its own substance — a reagent that has spoken is spent.',
   },
   {
     title: 'The current runs one way',
-    body: 'Clockwise, from slot to slot, paying what each slot is made of: nothing through a relay, one through any other stone, two to leap a gap. Loss belongs to the medium, and it is charged on each currency separately — so a stream carrying three currencies pays three times over, and a ring is cheapest to run when it carries few things in quantity rather than many things thinly.',
+    body: 'Clockwise, from slot to slot, paying what each slot is made of: two units to leap a gap, one unit across an ordinary reagent, and nothing at all through a relay, wherever it stands. A relay is a reagent that hands back precisely what it was given, unit for unit and currency for currency; ask one unit more of it, or let it give one unit less, and it is some other kind of reagent and its crossing costs the ordinary unit. That is the only thing a relay does differently: reached across a hole it costs the hole and nothing more, where any other reagent would cost the hole and then a unit of its own. Loss belongs to the medium and not to what is crossing it, so a crossing takes the same units whether the ring is carrying one currency or five, and it takes them from whatever has been in flight longest: the current released earliest is the current that dies.',
   },
   {
     title: 'The circle is walked once, then closed',
@@ -99,19 +116,15 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'An open slot is a hole in the circle',
-    body: 'Current spills out of a hole. Whatever the ring still holds at the mouth leaves it in the proportion the ring was closed: eight stones deliver all of it, four deliver half, two deliver a quarter. Filling the circle creates nothing — a full ring is simply the one that does not leak.',
+    body: 'Current spills out of a hole. Whatever the ring still holds at the mouth leaves it in the proportion the ring was closed: eight reagents deliver all of it, four deliver half, two deliver a quarter. Filling the circle creates nothing — a full ring is simply the one that does not leak.',
   },
   {
     title: 'Each material stands once and is asked once',
-    body: 'No stone may stand in two places at the same time: set one down where it already lies further round the ring and it is lifted from the old slot, not copied into the new, so eight slots mean eight different materials and the order you set them in is most of the craft. Nor may the ring ask a material twice. It is asked as the current reaches it, it gives the measure it holds, and the current comes back around to a stone with nothing left in it.',
+    body: 'No reagent may stand in two places at the same time: set one down where it already lies further round the ring and it is lifted from the old slot, not copied into the new, so eight slots mean eight different materials and the order you set them in is most of the craft. Nor may the ring ask a material twice. It is asked as the current reaches it, it gives the measure it holds, and the current comes back around to a reagent with nothing left in it.',
   },
   {
     title: 'What the ring cannot supply, the body supplies',
-    body: 'Every unmet demand is drawn out of the caster at the published rate. This is the toll, and it is never waived.',
-  },
-  {
-    title: 'A form is one law, bent',
-    body: 'Everything above describes a circle that nobody casts. A spell is spoken in one of the seven forms, and each form breaks exactly one of these laws, in one stated way; none breaks two, and none breaks the first. What a form gives back it takes somewhere else, so choosing one is choosing which cost to pay rather than how much power to have. The speaking is itself charged, at the same price in every form: one of each currency the ring raised, whether or not the law you bent was one this circle needed bent. No form waives the toll. A dirge can change what counts as a demand the ring cannot meet, but whatever shortfall survives that is charged in full.',
+    body: 'Every demand the ring does not meet is drawn out of the caster at the published rate. That is the toll, and it is the only thing a casting ever costs the body: a circle that feeds every reagent standing in it is free to speak, however large it is and however much it makes. Nothing else is charged, and no wording, posture or hour of the day moves what is charged elsewhere. Build the circle so that it feeds itself, or pay for the part that does not.',
   },
 ]
 
@@ -153,17 +166,17 @@ export type Role = (typeof ROLES)[number]
 export const ROLE_HINT: Record<Role, string> = {
   source:
     'Demands nothing, so it can open a circle at slot I and can never charge a toll. There are only three — a spark, a weight, a lens — and nothing sources charge or mass at all; those have to be made out of something the ring is already carrying.',
-  fuel: 'Gives back far more than it asks — it was carrying it already.',
+  fuel: 'Gives back more than it asks and gives up nothing to do it — it was carrying the difference already. Most give back far more.',
   converter:
     'Trades one currency for another and hands back a little more than it took. The profit is small next to a fuel, but conversion is the only route into charge and mass, so a ring that wants either is built around these.',
   relay:
-    'Carries up to its rating and passes on what it took, in the same currency. The current crosses it for free and it never charges a toll. It adds nothing of its own, so it earns its slot only where a crossing is dear — most of all at slot I, which is crossed once, at the close, with the whole lap in flight.',
+    'Gives back exactly what it asks for, unit for unit and currency for currency, so it adds nothing of its own — change either column by one and it is no longer a relay. What it gives instead is the crossing: the current passes through it for nothing, wherever it stands, so a reagent reached across a relay keeps a unit that any other slot would have taken. It is asked and billed like any other reagent, so an underfed relay costs the caster the difference — it buys distance, not slack.',
   sink:
     'Swallows and gives nothing back. It can only ever lower what leaves the ring, so it is not a way to make a spell stronger — it is how you keep something out of the manifestation, when what a spell must not do matters as much as what it does.',
 }
 
 /**
- * A stone with two empty ledgers, which the ring cannot tell from an empty slot.
+ * A reagent with two empty ledgers, which the ring cannot tell from an empty slot.
  * Not a role — there is nothing it can be for. The editor refuses to save one and
  * the repository drops any it finds, so this exists only to catch them.
  */
@@ -171,21 +184,63 @@ export function isInert(component: Ledgered): boolean {
   return ledgerTotal(component.demands) === 0 && ledgerTotal(component.yields) === 0
 }
 
-function sameCurrencies(a: Ledger, b: Ledger): boolean {
-  const left = currenciesIn(a)
-  const right = currenciesIn(b)
-  return left.length === right.length && left.every((c) => right.includes(c))
+/**
+ * True when the two ledgers are the same to the unit, currency by currency.
+ *
+ * This is the relay test, and it has to be exact rather than a comparison of
+ * which currencies each side mentions. Matching the currency *sets* alone ignores
+ * the amounts, which handed the free crossing to two things that are not relays
+ * at all: a reagent that hands back more of the same currency than it took (heat 8
+ * for heat 12 — a flat half again, and under the 1.5x fuel bar, so it fell
+ * through to the relay branch), and a reagent that genuinely trades while touching
+ * the same two currencies on both sides (heat 1 and motion 12 for heat 12 and
+ * motion 1, which converts eleven motion into eleven heat). Both were labelled
+ * relays in the tray and the editor, under a hint that says a relay adds nothing
+ * of its own, and both crossed for free.
+ *
+ * The exact test is also a brighter line for the user than a ratio: a relay is
+ * a relay while its two columns read alike and stops being one the moment they
+ * do not, which is legible on the card in a way "within half again" is not.
+ */
+function ledgersMatch(a: Ledger, b: Ledger): boolean {
+  return CURRENCIES.every((currency) => (a[currency] ?? 0) === (b[currency] ?? 0))
 }
 
 /**
- * Relays are resolved differently by the reaction in two ways: the current crosses
- * one for free, and their demand is a rating rather than a requirement, so an
- * underfed relay carries less instead of billing the caster the difference.
+ * True when no currency comes back smaller than it went in — the reagent multiplies
+ * what it was handed rather than trading one thing for another.
  *
- * Both are needed. Under law 1 a same-currency pass-through can at best hand back
- * what it took, so if crossing a relay cost anything it would be worse than an
- * empty slot; and if falling short of its rating charged a toll, a chain of them
- * would bill the caster at every hop once the current dipped.
+ * Only reached once `ledgersMatch` has failed, so something is strictly larger and
+ * the reagent is turning a profit without giving anything up. That is a fuel however
+ * small the profit is, and saying so is what keeps the ratio below from calling
+ * heat 8 for heat 12 a *converter* — it converts nothing.
+ */
+function givesUpNothing(demands: Ledger, yields: Ledger): boolean {
+  return CURRENCIES.every((currency) => (yields[currency] ?? 0) >= (demands[currency] ?? 0))
+}
+
+/**
+ * A relay is resolved exactly like any other reagent but for one thing: the current
+ * crosses it for nothing. That is the whole of the role, and it is the only place
+ * in `computeReaction` that asks what a component is — see `baseTransitCost` in
+ * `lib/reaction.ts`.
+ *
+ * The free crossing has to be free, and unconditionally. Under law 1 a reagent that
+ * hands back exactly what it took can at best break even, so a relay that cost
+ * anything to cross would never be worth a slot.
+ *
+ * What qualifies is decided by `ledgersMatch`, to the unit and currency by
+ * currency. That test is deliberately unforgiving, because this is the one role
+ * with teeth: it is the only question `computeReaction` asks about a component, so
+ * anything the predicate lets through crosses the ring for nothing.
+ *
+ * A relay used to be special in two further ways — its demand was a rating rather
+ * than a requirement, so an underfed one was never billed, and it handed on only
+ * what it actually took. Both are gone, and the rating rule is why. It made a
+ * relay free profit anywhere: dropped into a far-off hole it raised the share of
+ * the ring that reached the mouth and could not be charged for the demand it then
+ * failed to meet, where any other reagent in that slot paid its shortfall in full.
+ * Billing it like anything else is what keeps the free crossing honest.
  */
 export function isRelay(component: Ledgered): boolean {
   return describeRole(component) === 'relay'
@@ -196,15 +251,37 @@ export function isRelay(component: Ledgered): boolean {
  * a component the user edits is re-labelled the moment its numbers change.
  *
  * Assumes the component is not inert; those are refused on save and dropped on
- * load, so every stone that reaches here gives something, asks something, or both.
+ * load, so every reagent that reaches here gives something, asks something, or both.
  */
 export function describeRole(component: Ledgered): Role {
   const asks = ledgerTotal(component.demands)
   const gives = ledgerTotal(component.yields)
   if (gives === 0) return 'sink'
   if (asks === 0) return 'source'
-  // Tested before the relay check: a stone that takes heat and gives back three
-  // times the heat is a fuel, however matched its two ledgers look.
+
+  // The relay test comes first, and it is exact. It is the only role the resolver
+  // reads (`isRelay` -> `baseTransitCost`), so a reagent that lands here wrongly does
+  // not merely wear the wrong label — it crosses for free. Nothing is a relay
+  // unless its two columns read alike to the unit.
+  //
+  // Mind how sharp that is when retuning a ledger, because roles are derived and a
+  // reagent crosses the line silently: raise Copper Sheet from heat 9 for 9 to heat 9
+  // for 10 and it is a fuel, which costs it the free crossing. That is the intended
+  // reading — a reagent handing back more than it took is not carrying the current,
+  // it is adding to it — but the ledger edit does not look like it is asking for it.
+  if (ledgersMatch(component.demands, component.yields)) return 'relay'
+
+  // Profit without a trade is a fuel however slim the margin, so heat 8 for heat 12
+  // is a weak fuel rather than a "converter" that converts nothing. This is checked
+  // before the ratio because the ratio only measures how *much* came back, not
+  // whether anything was given up for it.
+  if (givesUpNothing(component.demands, component.yields)) return 'fuel'
+
+  // Past here the reagent gave something up, so it is trading. The ratio decides
+  // whether it traded at a big enough profit to read as a fuel instead. The
+  // comparison is strict, so the seven catalog entries sitting at exactly 1.5x —
+  // Hoarfrost, Lodestone, Bismuth Crystal, Cinnabar and Fulgurite at 8 for 12,
+  // Brine and Jet at 6 for 9 — are converters only just.
   if (gives > asks * 1.5) return 'fuel'
-  return sameCurrencies(component.demands, component.yields) ? 'relay' : 'converter'
+  return 'converter'
 }

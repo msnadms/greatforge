@@ -13,6 +13,17 @@
   --rune: #8a7554;
   /* Lightness for domain-hued accents (potency marks), tuned per theme. */
   --gem-l: 42%;
+  /*
+   * Saturation for everything drawn in a currency's hue. Held deliberately low
+   * and in one place: the currencies are meant to read as pigments ground on the
+   * bench — ember, verdigris, amethyst, old gold, slate — sitting under ink on
+   * parchment, not as screen colour shouting over it. Two steps only, so the
+   * whole palette moves together: `--gem-s` for the reserved uses (strokes,
+   * borders, small text), `--gem-s-strong` for fills, bars and glows, which need
+   * a little more to survive being laid at low opacity over the panel.
+   */
+  --gem-s: 30%;
+  --gem-s-strong: 40%;
   --accent: #7b3fbf;
   --accent-bg: rgba(123, 63, 191, 0.12);
   --accent-border: rgba(123, 63, 191, 0.55);
@@ -51,6 +62,10 @@
     --gilt: #d8a94a;
     --rune: #9a8ea6;
     --gem-l: 66%;
+    /* Muted hues go grey against a dark ground sooner than against parchment,
+       so candlelight carries a few points more of each. */
+    --gem-s: 36%;
+    --gem-s-strong: 46%;
     --accent: #c084fc;
     --accent-bg: rgba(192, 132, 252, 0.16);
     --accent-border: rgba(192, 132, 252, 0.5);

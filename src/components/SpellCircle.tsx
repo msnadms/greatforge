@@ -15,6 +15,12 @@ const FLOW_RADIUS = RADIUS - 9
 
 const DEGREES_PER_SLOT = 360 / RING_SLOT_COUNT
 
+/** One dash plus one gap, matching `stroke-dasharray` on `.circle__flow`. */
+const DASH_PERIOD = 3
+
+/** Seconds `flow-drift` takes to travel one dash period. */
+const DRIFT_SECONDS = 2.4
+
 interface Point {
   x: number
   y: number
@@ -43,7 +49,7 @@ function flowPath(from: number, to: number): string {
 }
 
 export function SpellCircle({ children }: { children: ReactNode }) {
-  const { draft, componentsById, reaction, armedComponentId, placeComponent, clearSlot } =
+  const { draft, componentsById, reaction, armedComponentId, placeComponent, clearSlot, mode } =
     useWorkshop()
 
   const points = useMemo(
@@ -61,14 +67,34 @@ export function SpellCircle({ children }: { children: ReactNode }) {
   /**
    * A transfer whose ends coincide went the whole way round the ring, which has
    * no arc to draw; the numbers still show it in the panel.
+   *
+   * Each surviving arc also gets a `phase`: its place in the run of transfers
+   * sharing the same pair of slots, as a fraction of one. Several currencies
+   * routinely cross the same gap, and every arc is now drawn at one width along
+   * the same radius, so their paths are identical to the pixel — without a phase
+   * the last one painted would be the only one anyone ever sees. Offsetting each
+   * by its share of the dash period interleaves the dashes instead, and the
+   * crossing reads as a braid of everything in flight along it. All of them drift
+   * at the same rate, so the offsets are constant and no two ever coincide.
    */
-  const flows = useMemo(
-    () => reaction.transfers.filter((transfer) => transfer.from !== transfer.to),
-    [reaction.transfers],
-  )
+  const flows = useMemo(() => {
+    const drawn = reaction.transfers.filter((transfer) => transfer.from !== transfer.to)
+    const pairKey = (transfer: { from: number; to: number }) => `${transfer.from}-${transfer.to}`
+
+    const counts = new Map<string, number>()
+    for (const transfer of drawn) counts.set(pairKey(transfer), (counts.get(pairKey(transfer)) ?? 0) + 1)
+
+    const seen = new Map<string, number>()
+    return drawn.map((transfer) => {
+      const key = pairKey(transfer)
+      const index = seen.get(key) ?? 0
+      seen.set(key, index + 1)
+      return { ...transfer, phase: index / (counts.get(key) ?? 1) }
+    })
+  }, [reaction.transfers])
 
   return (
-    <div className="circle">
+    <div className={`circle${mode === 'view' ? ' circle--view' : ''}`}>
       <svg className="circle__engraving" viewBox="0 0 100 100" role="presentation" aria-hidden="true">
         <circle className="circle__ring" cx="50" cy="50" r={RADIUS} />
         <circle className="circle__ring circle__ring--outer" cx="50" cy="50" r={RADIUS + 4} />
@@ -90,8 +116,15 @@ export function SpellCircle({ children }: { children: ReactNode }) {
             key={`flow-${flow.from}-${flow.to}-${flow.currency}`}
             className="circle__flow"
             d={flowPath(flow.from, flow.to)}
-            stroke={`hsl(${CURRENCY_META[flow.currency].hue} 70% 55%)`}
-            strokeWidth={0.25 + Math.min(flow.amount, 9) * 0.12}
+            style={
+              {
+                '--flow-hue': CURRENCY_META[flow.currency].hue,
+                '--flow-phase': flow.phase * DASH_PERIOD,
+                // Negative delay starts the drift already that far along, which
+                // phases the dashes without changing how fast any arc travels.
+                animationDelay: `${-flow.phase * DRIFT_SECONDS}s`,
+              } as CSSProperties
+            }
           >
             <title>{`${CURRENCY_META[flow.currency].label} ${flow.amount}`}</title>
           </path>
@@ -111,6 +144,7 @@ export function SpellCircle({ children }: { children: ReactNode }) {
             component={(id && componentsById.get(id)) || null}
             armedComponentId={armedComponentId}
             shortfall={shortfalls.get(index) ?? {}}
+            readOnly={mode === 'view'}
             style={style}
             onPlace={placeComponent}
             onClear={clearSlot}

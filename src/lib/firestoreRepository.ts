@@ -14,7 +14,7 @@ import { isInert } from '../data/currencies'
 import { buildSeedComponents } from '../data/seedComponents'
 import {
   normalizeComponent,
-  normalizeSlots,
+  normalizeSpell,
   type MaterialComponent,
   type Spell,
 } from '../types/worldbuilding'
@@ -40,6 +40,8 @@ import type { WorkshopRepository } from './repository'
  * domain/potency catalog; version 2 is the stoichiometric one; version 3 is the
  * balanced catalog — every currency sized into one band so none is erased by
  * transit, and no sinks, which could only ever lower what leaves the ring.
+ * Version 4 is the current catalog, tuned against flat transit and stocking the
+ * six relays; sinks are still authorable and still not shipped.
  */
 const SEED_VERSION = 4
 
@@ -63,10 +65,14 @@ function toComponent(snapshot: QueryDocumentSnapshot<DocumentData>): MaterialCom
   return normalizeComponent({ ...(snapshot.data() as Partial<StoredComponent>), id: snapshot.id })
 }
 
-/** Guards against older or hand-edited records missing newer fields. */
+/**
+ * Guards against older or hand-edited records missing newer fields. Every field
+ * goes through `normalizeSpell`, not just the slots: `form` indexes `FORM_META`
+ * straight from the render path, so a spell carrying one this build does not know
+ * about would take the whole workshop down instead of opening as a prayer.
+ */
 function toSpell(snapshot: QueryDocumentSnapshot<DocumentData>): Spell {
-  const data = snapshot.data() as StoredSpell
-  return { ...data, id: snapshot.id, slots: normalizeSlots(data.slots) }
+  return normalizeSpell({ ...(snapshot.data() as Partial<StoredSpell>), id: snapshot.id })
 }
 
 /** Profiles seeded before versioning carry only `seededAt`; treat those as version 1. */
@@ -165,9 +171,16 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
     })
   }
 
+  /**
+   * Normalized on the way out as well as on the way in. The editor already cleans
+   * what it collects, but the invariant belongs to the seam rather than to one
+   * caller: anything else that ever writes a component — an importer, the conlang
+   * module reusing this repository — would otherwise put zero entries, fractions
+   * or out-of-range amounts straight into Firestore.
+   */
   async saveComponent(component: MaterialComponent): Promise<void> {
     const uid = requireUid()
-    await setDoc(doc(this.components(uid), component.id), stripId(component))
+    await setDoc(doc(this.components(uid), component.id), stripId(normalizeComponent(component)))
   }
 
   async deleteComponent(id: string): Promise<void> {
@@ -183,7 +196,7 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
 
   async saveSpell(spell: Spell): Promise<void> {
     const uid = requireUid()
-    await setDoc(doc(this.spells(uid), spell.id), stripId(spell))
+    await setDoc(doc(this.spells(uid), spell.id), stripId(normalizeSpell(spell)))
   }
 
   async deleteSpell(id: string): Promise<void> {

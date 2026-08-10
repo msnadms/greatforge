@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useMemo,
   useRef,
   useState,
@@ -53,6 +54,15 @@ export function DragProvider({ children }: { children: ReactNode }) {
   const [preview, setPreview] = useState<DragPreview | null>(null)
   const dragRef = useRef<InternalDrag | null>(null)
 
+  /**
+   * Detaches whatever the drag in progress attached. A drag lives on window
+   * listeners rather than on this component, so unmounting mid-drag — signing out
+   * with a reagent in hand — would otherwise leave them bound and let the drop call
+   * into a workshop that is no longer mounted.
+   */
+  const teardownRef = useRef<(() => void) | null>(null)
+  useEffect(() => () => teardownRef.current?.(), [])
+
   const startDrag = useCallback(
     (event: ReactPointerEvent<HTMLElement>, payload: DragPayload) => {
       // Primary button (or touch/pen) only, and never two drags at once.
@@ -92,15 +102,20 @@ export function DragProvider({ children }: { children: ReactNode }) {
         })
       }
 
-      const handleEnd = (endEvent: PointerEvent) => {
-        if (endEvent.pointerId !== drag.pointerId) return
-
+      const teardown = () => {
         window.removeEventListener('pointermove', handleMove)
         window.removeEventListener('pointerup', handleEnd)
         window.removeEventListener('pointercancel', handleEnd)
         document.body.classList.remove('is-dragging')
         drag.source.classList.remove('is-dragSource')
         dragRef.current = null
+        teardownRef.current = null
+      }
+
+      const handleEnd = (endEvent: PointerEvent) => {
+        if (endEvent.pointerId !== drag.pointerId) return
+
+        teardown()
         setPreview(null)
 
         if (!drag.started) return
@@ -120,6 +135,7 @@ export function DragProvider({ children }: { children: ReactNode }) {
       window.addEventListener('pointermove', handleMove)
       window.addEventListener('pointerup', handleEnd)
       window.addEventListener('pointercancel', handleEnd)
+      teardownRef.current = teardown
     },
     [placeComponent, moveSlot],
   )

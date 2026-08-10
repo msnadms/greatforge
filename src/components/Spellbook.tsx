@@ -1,8 +1,48 @@
-import { FORM_LIST } from '../data/spellForms'
+import { FORM_LIST, FORM_META } from '../data/spellForms'
 import { useWorkshop } from '../state/useWorkshop'
 import { RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
 
-export function Spellbook() {
+/**
+ * An inscribed working, read rather than edited.
+ *
+ * Nothing here is a field and nothing carries a field's name: the page shows the
+ * working the way it was written down, so the title is a title and the words are
+ * the words. What tells the notes from the text is which page they are on and
+ * what they are set in, which is how the two differ in the book anyway.
+ */
+function BookView() {
+  const { draft, reaction, editDraft } = useWorkshop()
+  const form = FORM_META[draft.form]
+
+  return (
+    <div className="book book--view">
+      <div className="book__page book__page--left">
+        <h2 className="book__viewTitle">{draft.title || 'Untitled working'}</h2>
+        <p className="book__viewForm">
+          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()} · {reaction.filled} of{' '}
+          {RING_SLOT_COUNT} reagents
+        </p>
+        {draft.notes ? <p className="book__viewNotes">{draft.notes}</p> : null}
+      </div>
+
+      <div className="book__page book__page--right">
+        {draft.text ? (
+          <p className="book__viewText">{draft.text}</p>
+        ) : (
+          <p className="book__viewText book__viewText--none">No words were written for this one.</p>
+        )}
+
+        <div className="book__actions book__actions--end">
+          <button type="button" className="btn btn--primary" onClick={editDraft}>
+            Edit
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function BookEditor() {
   const { draft, dirty, updateDraft, saveDraft, reaction } = useWorkshop()
 
   return (
@@ -33,9 +73,9 @@ export function Spellbook() {
           </select>
         </label>
 
-        {/* The picker carries no description of its own. What the form does is
-            stated in the reaction panel beside the numbers it produced, and the law
-            it bends is marked in the list of laws there. */}
+        {/* The picker carries no description of its own: what kind of saying each
+            form is belongs in the reaction panel, and the form changes nothing
+            about the reaction, so it must not read as a dial on it. */}
 
         <label className="field field--grow">
           <span className="field__label">Notes</span>
@@ -51,9 +91,9 @@ export function Spellbook() {
       <div className="book__page book__page--right">
         <label className="field field--grow">
           <span className="field__label">
-            The {draft.form}
+            {draft.form}
             <span className="book__count">
-              {reaction.filled}/{RING_SLOT_COUNT} stones
+              {reaction.filled}/{RING_SLOT_COUNT} reagents
             </span>
           </span>
           <textarea
@@ -73,4 +113,9 @@ export function Spellbook() {
       </div>
     </div>
   )
+}
+
+export function Spellbook() {
+  const { mode } = useWorkshop()
+  return mode === 'view' ? <BookView /> : <BookEditor />
 }

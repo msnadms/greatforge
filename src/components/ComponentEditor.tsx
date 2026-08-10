@@ -35,6 +35,7 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
   const { upsertComponent } = useWorkshop()
   const [draft, setDraft] = useState<ComponentDraft>(() => initialDraft(component))
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   const inert = isInert(draft)
   const role = describeRole(draft)
@@ -56,16 +57,28 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
       return
     }
     if (inert) {
-      setError('A stone needs numbers. With both ledgers empty the ring cannot tell it from an empty slot.')
+      setError('A reagent needs numbers. With both ledgers empty the ring cannot tell it from an empty slot.')
       return
     }
-    void upsertComponent({
-      ...draft,
-      name: draft.name.trim(),
-      // Normalized here as well as on read, so a stray value never reaches storage.
-      demands: normalizeLedger(draft.demands),
-      yields: normalizeLedger(draft.yields),
-    }, component?.id).then(onClose)
+    setError(null)
+    setSaving(true)
+    void upsertComponent(
+      {
+        ...draft,
+        name: draft.name.trim(),
+        // Normalized here as well as on read, so a stray value never reaches storage.
+        demands: normalizeLedger(draft.demands),
+        yields: normalizeLedger(draft.yields),
+      },
+      component?.id,
+    ).then((saved) => {
+      // Only close on a write that landed. Closing regardless threw the draft away
+      // whenever Firestore refused it, leaving the user to retype the component
+      // from a banner elsewhere on the page that says only that something failed.
+      setSaving(false)
+      if (saved) onClose()
+      else setError('That could not be saved. The workshop is still holding your changes.')
+    })
   }
 
   return (
@@ -179,8 +192,8 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
           <button type="button" className="btn" onClick={onClose}>
             Cancel
           </button>
-          <button type="submit" className="btn btn--primary">
-            {component ? 'Save' : 'Add to codex'}
+          <button type="submit" className="btn btn--primary" disabled={saving}>
+            {saving ? 'Saving…' : component ? 'Save' : 'Add to codex'}
           </button>
         </div>
       </form>

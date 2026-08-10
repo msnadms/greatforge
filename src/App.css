@@ -224,21 +224,45 @@
   opacity: 0.4;
 }
 
-/* Current running clockwise from slot to slot. The dashes drift the way it flows. */
+/*
+ * Current running clockwise from slot to slot. The dashes drift the way it flows.
+ *
+ * Every arc is drawn at one width. Width used to carry the amount, and at this
+ * radius a fat flow stopped reading as a line at all — the dashes ran together
+ * into a smear, and a thick arc beside a thin one read as two different kinds of
+ * thing rather than two sizes of the same one. The amount is on the arc's own
+ * tooltip and spelled out in the panel, so nothing is lost by holding the stroke
+ * still. `--flow-phase` is what keeps several currencies crossing the same pair
+ * of slots legible now that they no longer differ in width; see `SpellCircle`.
+ */
 .circle__flow {
   fill: none;
+  stroke: hsl(var(--flow-hue, 40) var(--gem-s-strong) 55%);
+  stroke-width: 0.3;
   stroke-linecap: round;
   stroke-dasharray: 1.6 1.4;
-  opacity: 0.8;
+  /* Only used when the drift is off; the animation supplies the offset otherwise. */
+  stroke-dashoffset: var(--flow-phase, 0);
+  opacity: 0.85;
   animation: flow-drift 2.4s linear infinite;
 }
 
+/*
+ * Stated from 0 rather than left implicit, because the implicit start would be
+ * `--flow-phase` and the arcs would then travel different distances in the same
+ * time — a braided crossing would drift at several speeds at once. The phase
+ * comes off `animation-delay` instead.
+ */
 @keyframes flow-drift {
+  from {
+    stroke-dashoffset: 0;
+  }
   to {
     stroke-dashoffset: -3;
   }
 }
 
+/* Still braided when the drift stops: the declared `stroke-dashoffset` applies. */
 @media (prefers-reduced-motion: reduce) {
   .circle__flow {
     animation: none;
@@ -289,7 +313,7 @@
   color: var(--rune);
 }
 
-.slot--empty:hover,
+.slot--empty:not(.slot--readOnly):hover,
 .slot--armed {
   border-style: solid;
   border-color: var(--accent);
@@ -300,12 +324,15 @@
   width: var(--slot-card-w);
   min-height: 62px;
   border-radius: 10px;
-  border: 1px solid hsl(var(--slot-hue, 40) 40% 55% / 0.9);
+  border: 1px solid hsl(var(--slot-hue, 40) var(--gem-s) 55% / 0.9);
   box-shadow:
-    0 0 18px -4px hsl(var(--slot-hue, 40) 70% 50% / 0.5),
+    0 0 18px -4px hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.5),
     var(--shadow);
   background:
-    linear-gradient(hsl(var(--slot-hue, 40) 60% 50% / 0.14), hsl(var(--slot-hue, 40) 60% 50% / 0.05)),
+    linear-gradient(
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.14),
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.05)
+    ),
     var(--panel);
   /* Left gutter reserved for the slot numeral. */
   padding: 8px 8px 8px 22px;
@@ -320,6 +347,25 @@
   cursor: grabbing;
 }
 
+/*
+ * A slot in a working being read. It keeps its card, its hue and its starved
+ * marking — the point of view mode is to show the circle as it was laid — and
+ * gives up only the handling: no grab cursor, no text selection to fight the
+ * drag that is no longer offered.
+ */
+.slot--readOnly {
+  cursor: default;
+}
+
+.slot--readOnly.slot--filled:active {
+  cursor: default;
+}
+
+/* Unfilled slots recede, so what reads is the shape the caster actually laid. */
+.circle--view .slot--empty {
+  opacity: 0.45;
+}
+
 .slot--over {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-bg);
@@ -329,7 +375,8 @@
 .slot--starved {
   border-color: var(--danger);
   box-shadow:
-    0 0 18px -4px hsl(0 60% 50% / 0.45),
+    /* Pulled back to sit with the muted currency glows; still the loudest of them. */
+    0 0 18px -4px hsl(0 45% 50% / 0.45),
     var(--shadow);
 }
 
@@ -377,7 +424,7 @@
 
 /* ---------------------------------------------------------- ledger readouts */
 
-/* What a stone asks on the left, what it gives on the right. */
+/* What a reagent asks on the left, what it gives on the right. */
 .ledgerLine {
   display: flex;
   flex-wrap: wrap;
@@ -416,20 +463,20 @@
 .pip {
   padding: 0 4px;
   border-radius: 3px;
-  border: 1px solid hsl(var(--chip-hue, 40) 40% 55% / 0.55);
+  border: 1px solid hsl(var(--chip-hue, 40) var(--gem-s) 55% / 0.55);
   white-space: nowrap;
 }
 
 /* Demands read as an outline; yields are filled, because they are what you get. */
 .pip--demand {
-  color: hsl(var(--chip-hue, 40) 45% var(--gem-l));
+  color: hsl(var(--chip-hue, 40) var(--gem-s) var(--gem-l));
   background: transparent;
 }
 
 .pip--yield {
   color: var(--text-h);
-  background: hsl(var(--chip-hue, 40) 60% 50% / 0.28);
-  border-color: hsl(var(--chip-hue, 40) 50% 55% / 0.8);
+  background: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50% / 0.28);
+  border-color: hsl(var(--chip-hue, 40) var(--gem-s) 55% / 0.8);
 }
 
 .pip--none {
@@ -533,10 +580,75 @@
   gap: 8px;
 }
 
+/* View mode has no save state to report, so Edit sits alone at the right. */
+.book__actions--end {
+  justify-content: flex-end;
+}
+
 .book__status {
   font-size: 11px;
   letter-spacing: 1px;
   text-transform: uppercase;
+  color: var(--rune);
+}
+
+/* ---------------------------------------------------------- spellbook, read */
+
+/*
+ * The written page. No field carries its name here: the working is shown as it
+ * was set down, and the notes are told from the words by which page they are on
+ * and what they are set in — the text keeps the hand it was written in, the
+ * notes stay in the body face.
+ */
+/* The pages stay evenly split: the spine is painted at the halfway mark, and an
+   uneven split both misplaces it and squeezes the title into three lines. */
+.book--view .book__page {
+  gap: 8px;
+}
+
+.book__viewTitle {
+  font-family: var(--heading);
+  font-size: 20px;
+  line-height: 1.25;
+  color: var(--text-h);
+}
+
+.book__viewForm {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--rune);
+}
+
+.book__viewNotes {
+  /* Written text keeps its own line breaks; nothing here re-wraps the page. */
+  white-space: pre-wrap;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  /* Sits under the title block, and takes the scrolling if the notes run long. */
+  margin-top: 4px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  overflow-wrap: anywhere;
+}
+
+.book__viewText {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  font-family: var(--hand);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--text-h);
+  overflow-wrap: anywhere;
+}
+
+.book__viewText--none {
+  font-family: inherit;
+  font-size: 12px;
+  font-style: italic;
   color: var(--rune);
 }
 
@@ -642,8 +754,10 @@
   background: color-mix(in srgb, var(--border-strong) 35%, transparent);
 }
 
+/* What was lost, so it sits a shade back from the manifestation bars above. */
 .reaction__bledBars span {
   display: block;
+  background: hsl(var(--bar-hue, 40) var(--gem-s) 45% / 0.55);
 }
 
 .reaction__laws {
@@ -668,20 +782,6 @@
 
 .reaction__laws strong {
   color: var(--text-h);
-}
-
-/* The one law the current form breaks, called out against the six it keeps. */
-.reaction__law--bent {
-  color: var(--accent);
-}
-
-.reaction__law--bent strong {
-  color: var(--accent);
-}
-
-.reaction__bent {
-  font-family: var(--heading);
-  letter-spacing: 0.5px;
 }
 
 /* One ledger as labelled bars, scaled against its own largest entry. */
@@ -716,6 +816,7 @@
   height: 8px;
   min-width: 3px;
   border-radius: 4px;
+  background: hsl(var(--bar-hue, 40) var(--gem-s-strong) 55%);
 }
 
 .ledger__amount {
@@ -801,6 +902,49 @@
   width: auto;
 }
 
+/*
+ * The two currency columns and the sort row run the full width under the search
+ * and the part select, which share the first row.
+ */
+.tray__group,
+.tray__sortRow {
+  grid-column: 1 / -1;
+}
+
+.tray__group {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.tray__groupLabel {
+  width: 42px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--rune);
+}
+
+.tray__sortRow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tray__sort {
+  width: auto;
+}
+
+.tray__count {
+  font-size: 11px;
+  color: var(--rune);
+  margin-left: auto;
+}
+
 .tray__hint,
 .tray__empty {
   font-size: 12px;
@@ -820,7 +964,7 @@
 
 .tray__item {
   border: 1px solid var(--border);
-  border-left: 3px solid hsl(var(--slot-hue, 40) 50% 55%);
+  border-left: 3px solid hsl(var(--slot-hue, 40) var(--gem-s-strong) 55%);
   border-radius: 6px;
   background: var(--panel);
   padding: 8px 10px;
@@ -842,6 +986,19 @@
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
+/*
+ * The codex while a working is being read. Still a catalog to look through and
+ * still editable as components, but nothing here can be aimed at a circle that
+ * would refuse it, so it drops the grab cursor and lets its text be selected.
+ */
+.tray__item--inert,
+.tray__item--inert:active {
+  cursor: default;
+  touch-action: auto;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
 .tray__itemHead {
   display: flex;
   align-items: baseline;
@@ -859,7 +1016,7 @@
   font-size: 10px;
   letter-spacing: 1px;
   text-transform: uppercase;
-  color: hsl(var(--slot-hue, 40) 50% var(--gem-l));
+  color: hsl(var(--slot-hue, 40) var(--gem-s-strong) var(--gem-l));
   white-space: nowrap;
 }
 
@@ -948,21 +1105,64 @@
   letter-spacing: 0.4px;
   padding: 3px 8px;
   border-radius: 999px;
-  border: 1px solid hsl(var(--chip-hue, 40) 40% 55% / 0.6);
-  background: hsl(var(--chip-hue, 40) 55% 50% / 0.12);
+  border: 1px solid hsl(var(--chip-hue, 40) var(--gem-s) 55% / 0.6);
+  background: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50% / 0.12);
   color: var(--text-h);
   cursor: pointer;
 }
 
 .chip--active {
-  background: hsl(var(--chip-hue, 40) 60% 50% / 0.35);
-  border-color: hsl(var(--chip-hue, 40) 50% 50%);
+  background: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50% / 0.35);
+  border-color: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50%);
 }
 
 .chip--tiny {
   font-size: 10px;
   padding: 1px 6px;
   cursor: default;
+}
+
+/*
+ * A chip that is really a checkbox. The box itself is kept in the document
+ * rather than removed with `display: none`, so it stays focusable and reachable
+ * by the keyboard; the chip's own fill is the checked state, and the ring below
+ * is what tells a keyboard user where they are.
+ */
+.chip--check {
+  display: inline-flex;
+  align-items: center;
+  font-size: 10px;
+  padding: 2px 7px;
+  user-select: none;
+  -webkit-user-select: none;
+  /*
+   * Outline when it is not chosen, filled when it is — the same distinction the
+   * ledger pips already draw between what a reagent asks and what it gives, so ten
+   * of these in a column read as a row of switches rather than ten colours.
+   */
+  background: transparent;
+  color: hsl(var(--chip-hue, 40) var(--gem-s) var(--gem-l));
+  border-color: hsl(var(--chip-hue, 40) var(--gem-s) 55% / 0.45);
+}
+
+.chip--check.chip--active {
+  background: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50% / 0.35);
+  border-color: hsl(var(--chip-hue, 40) var(--gem-s-strong) 50%);
+  color: var(--text-h);
+}
+
+.chip--check input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  margin: 0;
+  pointer-events: none;
+}
+
+.chip--check:has(input:focus-visible) {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
 }
 
 /* ------------------------------------------------------------------- editor */
@@ -991,7 +1191,7 @@
   color: var(--text-h);
 }
 
-/* A stone with two empty ledgers cannot be saved; say so before Save is pressed. */
+/* A reagent with two empty ledgers cannot be saved; say so before Save is pressed. */
 .editor__role--inert,
 .editor__role--inert strong {
   color: var(--danger);
@@ -1025,14 +1225,17 @@ body.is-dragging * {
   min-height: 62px;
   padding: 8px 10px;
   border-radius: 10px;
-  border: 1px solid hsl(var(--slot-hue, 40) 45% 55%);
+  border: 1px solid hsl(var(--slot-hue, 40) var(--gem-s) 55%);
   background:
-    linear-gradient(hsl(var(--slot-hue, 40) 60% 50% / 0.2), hsl(var(--slot-hue, 40) 60% 50% / 0.08)),
+    linear-gradient(
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.2),
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.08)
+    ),
     var(--panel);
   color: var(--text-h);
   text-align: center;
   box-shadow:
-    0 0 26px -4px hsl(var(--slot-hue, 40) 70% 50% / 0.6),
+    0 0 26px -4px hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.6),
     rgba(24, 16, 6, 0.35) 0 14px 22px -8px;
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }

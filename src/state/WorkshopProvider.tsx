@@ -4,7 +4,12 @@ import { newId } from '../lib/id'
 import type { WorkshopRepository } from '../lib/repository'
 import { computeReaction, resolvePlacements } from '../lib/reaction'
 import { emptySlots, type MaterialComponent, type Spell } from '../types/worldbuilding'
-import { WorkshopContext, type ComponentDraft, type WorkshopValue } from './workshopContext'
+import {
+  WorkshopContext,
+  type BenchMode,
+  type ComponentDraft,
+  type WorkshopValue,
+} from './workshopContext'
 
 function blankSpell(): Spell {
   const now = Date.now()
@@ -48,6 +53,9 @@ export function WorkshopProvider({
   const [spells, setSpells] = useState<Spell[]>([])
   const [draft, setDraft] = useState<Spell>(blankSpell)
   const [dirty, setDirty] = useState(false)
+  // A blank bench is the workbench: there is nothing to read yet. Only an
+  // inscribed working opens in `view`.
+  const [mode, setMode] = useState<BenchMode>('edit')
   const [armedComponentId, setArmedComponentId] = useState<string | null>(null)
 
   useEffect(() => {
@@ -100,26 +108,34 @@ export function WorkshopProvider({
     [draft.slots, componentsById],
   )
 
-  // The form is an input to the resolver, not a label on it: changing the picker
-  // re-resolves the same stones under a different law. See `data/spellForms.ts`.
-  const reaction = useMemo(
-    () => computeReaction(placements, draft.form),
-    [placements, draft.form],
-  )
+  // The form is a label, not an input: the reagents and their order decide the
+  // whole reaction, so the picker does not re-resolve. See `data/spellForms.ts`.
+  const reaction = useMemo(() => computeReaction(placements), [placements])
 
-  const patchSlots = useCallback((mutate: (slots: (string | null)[]) => void) => {
-    setDraft((current) => {
-      const slots = [...current.slots]
-      mutate(slots)
-      return { ...current, slots }
-    })
-    setDirty(true)
-  }, [])
+  /**
+   * Every change to the working funnels through here and `updateDraft`, and both
+   * refuse to touch a working being viewed. The components hide their own
+   * affordances in view mode, but a drop can still be released over the circle
+   * from a pointer press that began before the mode changed, so the refusal lives
+   * at the state rather than only in the markup.
+   */
+  const patchSlots = useCallback(
+    (mutate: (slots: (string | null)[]) => void) => {
+      if (mode === 'view') return
+      setDraft((current) => {
+        const slots = [...current.slots]
+        mutate(slots)
+        return { ...current, slots }
+      })
+      setDirty(true)
+    },
+    [mode],
+  )
 
   const placeComponent = useCallback(
     (slotIndex: number, componentId: string) => {
       patchSlots((slots) => {
-        // A circle admits each material once, so setting a stone down lifts it
+        // A circle admits each material once, so setting a reagent down lifts it
         // from wherever else it was standing rather than duplicating it. Without
         // this the strongest ring is always eight of whatever yields most, and
         // every other material in the codex is dead weight.
@@ -153,10 +169,16 @@ export function WorkshopProvider({
     [patchSlots],
   )
 
-  const updateDraft = useCallback((patch: Partial<Omit<Spell, 'id' | 'createdAt'>>) => {
-    setDraft((current) => ({ ...current, ...patch }))
-    setDirty(true)
-  }, [])
+  const updateDraft = useCallback(
+    (patch: Partial<Omit<Spell, 'id' | 'createdAt'>>) => {
+      if (mode === 'view') return
+      setDraft((current) => ({ ...current, ...patch }))
+      setDirty(true)
+    },
+    [mode],
+  )
+
+  const editDraft = useCallback(() => setMode('edit'), [])
 
   const saveDraft = useCallback(async () => {
     const saved: Spell = {
@@ -174,11 +196,17 @@ export function WorkshopProvider({
     })
     setDraft(saved)
     setDirty(false)
+    // Inscribing finishes the working, so the bench falls back to reading it.
+    // That also gives the round trip an obvious close: a spell opens in view,
+    // Edit opens it, Inscribe returns it to the page it came from.
+    setMode('view')
+    setArmedComponentId(null)
   }, [draft, repository, write])
 
   const newSpell = useCallback(() => {
     setDraft(blankSpell())
     setDirty(false)
+    setMode('edit')
     setArmedComponentId(null)
   }, [])
 
@@ -188,6 +216,7 @@ export function WorkshopProvider({
       if (!found) return
       setDraft(found)
       setDirty(false)
+      setMode('view')
       setArmedComponentId(null)
     },
     [spells],
@@ -202,18 +231,23 @@ export function WorkshopProvider({
       if (draft.id === id) {
         setDraft(blankSpell())
         setDirty(false)
+        setMode('edit')
       }
     },
     [draft.id, repository, write],
   )
 
+  /** Resolves to false when the write failed, so the editor can stay open on its draft. */
   const upsertComponent = useCallback(
     async (input: ComponentDraft, id?: string) => {
       const now = Date.now()
       const existing = id ? componentsById.get(id) : undefined
       const component: MaterialComponent = {
         ...input,
-        id: existing?.id ?? newId(),
+        // An edit keeps the id it was opened with even if the component has since
+        // gone from local state. Falling back to a fresh id here would silently
+        // fork the record into a duplicate instead of saving over the original.
+        id: id ?? newId(),
         isSeed: existing?.isSeed ?? false,
         createdAt: existing?.createdAt ?? now,
         updatedAt: now,
@@ -221,7 +255,7 @@ export function WorkshopProvider({
       const ok = await write('Could not record the component', () =>
         repository.saveComponent(component),
       )
-      if (!ok) return
+      if (!ok) return false
 
       setComponents((current) => {
         const index = current.findIndex((entry) => entry.id === component.id)
@@ -231,6 +265,7 @@ export function WorkshopProvider({
             : current.map((entry) => (entry.id === component.id ? component : entry))
         return next.sort(byName)
       })
+      return true
     },
     [componentsById, repository, write],
   )
@@ -246,16 +281,21 @@ export function WorkshopProvider({
       setArmedComponentId((current) => (current === id ? null : current))
 
       // Clear the deleted component out of the draft rather than leaving a dangling id.
-      setDraft((current) =>
-        current.slots.includes(id)
-          ? { ...current, slots: current.slots.map((slot) => (slot === id ? null : slot)) }
-          : current,
-      )
+      // That is a real edit to the working on the bench, so it marks it unsaved: the
+      // bench now differs from the inscribed spell, and without this it would read
+      // "Saved" and let the user leave for another working without a warning.
+      if (draft.slots.includes(id)) {
+        setDraft((current) => ({
+          ...current,
+          slots: current.slots.map((slot) => (slot === id ? null : slot)),
+        }))
+        setDirty(true)
+      }
 
       // Saved spells keep their reference until re-saved; resolvePlacements skips
       // dangling ids, so they simply render as empty slots.
     },
-    [repository, write],
+    [draft.slots, repository, write],
   )
 
   const value: WorkshopValue = useMemo(
@@ -268,6 +308,8 @@ export function WorkshopProvider({
       spells,
       draft,
       dirty,
+      mode,
+      editDraft,
       placements,
       reaction,
       armedComponentId,
@@ -292,6 +334,8 @@ export function WorkshopProvider({
       spells,
       draft,
       dirty,
+      mode,
+      editDraft,
       placements,
       reaction,
       armedComponentId,

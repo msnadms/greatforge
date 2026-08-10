@@ -43,7 +43,7 @@ function Pips({
 
 /**
  * A material's ledger at a glance: what it asks on the left, what it gives on
- * the right. Used on slot cards, tray cards and the drag preview, so a stone
+ * the right. Used on slot cards, tray cards and the drag preview, so a reagent
  * reads the same wherever it is.
  */
 export function LedgerLine({

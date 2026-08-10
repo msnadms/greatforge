@@ -40,10 +40,13 @@ import type { WorkshopRepository } from './repository'
  * domain/potency catalog; version 2 is the stoichiometric one; version 3 is the
  * balanced catalog — every currency sized into one band so none is erased by
  * transit, and no sinks, which could only ever lower what leaves the ring.
- * Version 4 is the current catalog, tuned against flat transit and stocking the
- * six relays; sinks are still authorable and still not shipped.
+ * Version 4 was tuned against flat transit and stocked the six relays, with sinks
+ * still authorable and not shipped. Version 5 adds the two sinks, which forms made
+ * necessary: a dirge is spared the spill only while a sink stands in the ring, and
+ * with none in the catalog that condition could not be met without the user
+ * authoring one first.
  */
-const SEED_VERSION = 4
+const SEED_VERSION = 5
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>

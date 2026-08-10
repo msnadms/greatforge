@@ -19,8 +19,9 @@ export type Currency = (typeof CURRENCIES)[number]
 export type Ledger = Partial<Record<Currency, number>>
 
 /**
- * The manner a working is spoken in. Recorded on the spell and rendered in the
- * app, but never read by `computeReaction` — see `data/spellForms.ts`.
+ * The manner a working is spoken in, and an input to `computeReaction`: a form
+ * decides what an underfed reagent does, and states a condition on the circle that
+ * spares or doubles one kind of loss. See `data/spellForms.ts`.
  */
 export const SPELL_FORMS = [
   'prayer',
@@ -48,6 +49,24 @@ export type Rarity = (typeof RARITIES)[number]
 export const RING_SLOT_COUNT = 8
 
 /**
+ * How a form's condition lands on one kind of loss: `spared` when the circle met
+ * what the form asked of it, `doubled` when it did not, `plain` for a form that
+ * asks nothing.
+ *
+ * These are the only three settings, and there is deliberately no fourth that
+ * *adds* to what leaves the ring. A form may decide where the losses fall and
+ * nothing else — the moment one could put a unit into the world that no reagent was
+ * carrying, the first law is a lie. See the seventh law in `data/currencies.ts`.
+ */
+export type LossRelief = 'spared' | 'plain' | 'doubled'
+
+/** What a crossing costs under a relief: nothing, its stated price, or twice it. */
+export function transitScale(relief: LossRelief): number {
+  if (relief === 'spared') return 0
+  return relief === 'doubled' ? 2 : 1
+}
+
+/**
  * How much of what the ring still holds at the mouth actually leaves it.
  *
  * An empty slot is a hole in the circle, and current spills out of a hole. The
@@ -61,16 +80,31 @@ export const RING_SLOT_COUNT = 8
  * ring the most efficient thing in the game and put small circles outside the
  * cost system entirely.
  *
- * It never exceeds 1. A full ring is the baseline, not a bonus: a multiplier
- * above 1 would put units into the world that no reagent was carrying, and that is
- * precisely what the first law forbids.
+ * It never exceeds 1, under any relief. A full ring is the baseline, not a bonus:
+ * a multiplier above 1 would put units into the world that no reagent was carrying,
+ * and that is precisely what the first law forbids. `spared` therefore means the
+ * ring merely stops leaking, which is the most a form can ever be worth — it is
+ * why the four forms that spare the spill are worth nothing at all on a full ring,
+ * and why the two that spare the transit are the ones that reward filling it.
+ *
+ * `doubled` squares the share rather than halving it, so the forfeit is nil on a
+ * closed ring and severe on a sparse one. That keeps the penalty pointed at the
+ * shape the form asked for and not at the size of the working.
  *
  * `filled` is simply the number of reagents standing in the ring. Every reagent closes
  * its slot, relays included: a relay is billed for what the ring could not give it
- * exactly like anything else, so there is no way to buy completion with one.
+ * exactly like anything else, so there is no way to buy completion with one. A
+ * reagent a measuring form cut down closes its slot too — it stands in the ring, so
+ * the ring is not open there.
+ *
+ * `spill` is stated rather than defaulted. Every ring is resolved under some form,
+ * so there is no caller that legitimately wants an unrelieved completion, and a
+ * default would let one compute a share no casting produces.
  */
-export function completionFactor(filled: number): number {
-  return Math.max(0, Math.min(filled, RING_SLOT_COUNT)) / RING_SLOT_COUNT
+export function completionFactor(filled: number, spill: LossRelief): number {
+  if (spill === 'spared') return 1
+  const share = Math.max(0, Math.min(filled, RING_SLOT_COUNT)) / RING_SLOT_COUNT
+  return spill === 'doubled' ? share * share : share
 }
 
 /**
@@ -78,11 +112,13 @@ export function completionFactor(filled: number): number {
  *
  * This sits in a narrow window, and both walls of it are real.
  *
- * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT = 8 units, and loss lands
- * on the oldest current first, so it is the reagent at slot I that pays it. The
- * ceiling therefore has to clear 8 or slot I can hold nothing that reaches the
- * mouth — at a ceiling of 9 the best reagent in the world returns one unit from
- * there, and the front of the ring is scenery. Twelve leaves it returning 4.
+ * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT = 8 units. A crossing is
+ * charged to the current the slot ahead demanded and falls back to the oldest in
+ * flight, so a yield nothing downstream asks for is billed for the whole lap and it
+ * is the reagent at slot I that pays it. The ceiling therefore has to clear 8 or
+ * slot I can hold nothing that reaches the mouth — at a ceiling of 9 the best
+ * reagent in the world returns one unit from there, and the front of the ring is
+ * scenery. Twelve leaves it returning 4.
  *
  * The upper wall used to be the relay: when a crossing cost one unit of every
  * currency in flight, a relay saved as much as five and the ceiling had to stay
@@ -97,11 +133,15 @@ export const MAX_LEDGER_ENTRY = 12
  * This is what makes position matter: a yield of 4 is dead four reagents
  * downstream.
  *
- * A flat cost against the current as a whole, taken off whatever has been in
- * flight longest — not one unit of every currency. Charging per currency made a
- * wide ring pay five times what a narrow one paid for the same walk, which priced
- * the *breadth* of a spell rather than its shape and erased every small flow
- * before it reached the mouth.
+ * A flat cost against the current as a whole — not one unit of every currency.
+ * Charging per currency made a wide ring pay five times what a narrow one paid for
+ * the same walk, which priced the *breadth* of a spell rather than its shape and
+ * erased every small flow before it reached the mouth.
+ *
+ * It is charged to the current the destination demanded, and only what that cannot
+ * cover falls on the oldest in flight. See `crossInto`: billing the oldest outright
+ * let an unrelated source at slot I absorb every crossing in the lap and carry a
+ * downstream chain for free.
  */
 export const TRANSIT_LOSS_REAGENT = 1
 
@@ -139,10 +179,23 @@ export interface MaterialComponent {
   updatedAt: number
 }
 
+/**
+ * A placed component together with the slot it occupies.
+ *
+ * Lives here rather than beside `computeReaction` because a form's condition is
+ * a question about the ring — how many reagents stand in it, where the holes are,
+ * what roles are present — and the conditions are written in `data/spellForms.ts`,
+ * one layer below the resolver that reads them.
+ */
+export interface Placement {
+  slotIndex: number
+  component: MaterialComponent
+}
+
 export interface Spell {
   id: string
   title: string
-  /** How it is spoken. Cosmetic: the reaction does not read it. */
+  /** How it is spoken, and an input to the reaction. See `data/spellForms.ts`. */
   form: SpellForm
   /** The authored prayer/elegy/litany itself. */
   text: string

@@ -1,6 +1,6 @@
 import { createContext } from 'react'
-import type { Placement, Reaction } from '../lib/reaction'
-import type { MaterialComponent, Spell } from '../types/worldbuilding'
+import type { Reaction } from '../lib/reaction'
+import type { MaterialComponent, Placement, Spell } from '../types/worldbuilding'
 
 /** Fields the editor collects; ids and timestamps are managed by the workshop. */
 export type ComponentDraft = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updatedAt'>

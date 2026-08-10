@@ -2,28 +2,56 @@
  * Throwaway balance harness. Compiled out to the scratchpad and run under node;
  * not part of the app. See CLAUDE.md "Balance".
  *
- * It used to be a form comparison: resolve one ring seven ways and ask which form
- * won each cell of a cost-tolerance map. Forms are cosmetic now and the resolver
- * does not take one, so what is left to check is the circle itself — that law 1
- * holds on every ring, that the ring shape still matters, and that every currency
- * in the catalog still reaches the mouth on some ring.
+ * Two things to check, and they are separable. The circle itself: that law 1 holds
+ * on every ring, that the ring shape still matters, and that every currency in the
+ * catalog still reaches the mouth. And the forms, which are resolver inputs again:
+ * that each of the seven is worth choosing somewhere, that the three measuring
+ * forms never charge the body, and that no condition is either free to satisfy or
+ * impossible to.
+ *
+ * Everything measuring the circle runs under PLAIN, the prayer, which is the one
+ * form that asks nothing and spares nothing. Those numbers are directly comparable
+ * with the table in CLAUDE.md from before forms became behavioural, and they must
+ * stay so: a change that moves the prayer has moved the circle, not the forms.
  */
 import { buildSeedComponents } from '../src/data/seedComponents'
-import { computeReaction, type Placement } from '../src/lib/reaction'
+import { computeReaction } from '../src/lib/reaction'
 import { CURRENCY_META, describeRole } from '../src/data/currencies'
+import { FORM_META, conditionRelief } from '../src/data/spellForms'
 import {
   CURRENCIES,
   RING_SLOT_COUNT,
+  SPELL_FORMS,
   ledgerAmount,
   ledgerEntries,
   ledgerTotal,
   type Currency,
   type Ledger,
   type MaterialComponent,
+  type Placement,
+  type SpellForm,
 } from '../src/types/worldbuilding'
+
+/** The form every measurement of the circle itself is taken under. */
+const PLAIN: SpellForm = 'prayer'
 
 let seq = 0
 const CATALOG: MaterialComponent[] = buildSeedComponents(() => `c${seq++}`, 0)
+
+/**
+ * The catalog split by the one question the builders ask of it, through the same
+ * derived predicate the app labels the tray with. Restating it as
+ * `ledgerTotal(demands) === 0` is what let the probes below drift apart from the
+ * cohorts they are meant to be comparable with.
+ */
+const SOURCES: MaterialComponent[] = CATALOG.filter((c) => describeRole(c) === 'source')
+const NON_SOURCES: MaterialComponent[] = CATALOG.filter((c) => describeRole(c) !== 'source')
+
+/**
+ * The source both transit probes are pinned to. One reagent, so the two hard
+ * assertions cannot start probing with different ones when the catalog is retuned.
+ */
+const MOTION_SOURCE = SOURCES.find((c) => ledgerAmount(c.yields, 'motion') >= 10)
 
 // Deterministic PRNG so runs are comparable between tunings.
 let state = 0x2f6e2b1
@@ -65,10 +93,8 @@ function randomRing(reagents: number): Placement[] {
 
 /** A ring built the way a player builds one: a source first, then anything. */
 function builtRing(reagents: number): Placement[] {
-  const sources = CATALOG.filter((c) => ledgerTotal(c.demands) === 0)
-  const rest = CATALOG.filter((c) => ledgerTotal(c.demands) > 0)
-  const placements: Placement[] = [{ slotIndex: 0, component: pick(sources) }]
-  const pool = [...rest]
+  const placements: Placement[] = [{ slotIndex: 0, component: pick(SOURCES) }]
+  const pool = [...NON_SOURCES]
   for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
     const idx = Math.floor(rand() * pool.length)
     placements.push({ slotIndex, component: pool.splice(idx, 1)[0] })
@@ -83,23 +109,53 @@ function builtRing(reagents: number): Placement[] {
  * rather than a choice.
  */
 function fedRing(reagents: number): Placement[] {
-  const sources = CATALOG.filter((c) => ledgerTotal(c.demands) === 0)
-  const placements: Placement[] = [{ slotIndex: 0, component: pick(sources) }]
+  const placements: Placement[] = [{ slotIndex: 0, component: pick(SOURCES) }]
   const pool = CATALOG.filter((c) => c !== placements[0].component)
   for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
-    const order = shuffled(pool)
-    let placed = false
-    for (const candidate of order) {
-      const trial = [...placements, { slotIndex, component: candidate }]
-      const r = computeReaction(trial)
-      if (r.slots.every((slot) => ledgerEntries(slot.shortfall).length === 0)) {
-        placements.push({ slotIndex, component: candidate })
-        pool.splice(pool.indexOf(candidate), 1)
-        placed = true
-        break
-      }
+    if (!growFed(placements, pool, slotIndex)) break
+  }
+  return placements
+}
+
+/**
+ * Fills one slot with the first candidate that leaves the ring starving nowhere,
+ * spending it out of `pool`. Returns false if the pool holds no such reagent.
+ *
+ * This is the harness's definition of "fed", and it is here once because three
+ * cohorts are built on it. The two builders around it differ only in which slots
+ * they walk and what they do when a slot cannot be filled.
+ */
+function growFed(placements: Placement[], pool: MaterialComponent[], slotIndex: number): boolean {
+  for (const candidate of shuffled(pool)) {
+    const trial = [...placements, { slotIndex, component: candidate }]
+    const r = computeReaction(trial, PLAIN)
+    if (r.slots.every((slot) => ledgerEntries(slot.shortfall).length === 0)) {
+      placements.push({ slotIndex, component: candidate })
+      pool.splice(pool.indexOf(candidate), 1)
+      return true
     }
-    if (!placed) break
+  }
+  return false
+}
+
+/**
+ * A fed ring in a *given* set of slots, or `[]` if the catalog cannot fill them
+ * without starving something.
+ *
+ * `fedRing` above always lays its reagents contiguously from slot I, which is how a
+ * player builds but is only one shape. Three of the six conditions ask for a shape
+ * it can never produce — two pairs with a hole between them, or slot VIII filled
+ * with the middle open — so measuring those forms against a contiguous builder
+ * reports them unreachable when they are merely unbuilt.
+ *
+ * Slots must arrive in ascending order: the check is incremental, and it is only
+ * valid because adding a later slot cannot retroactively starve an earlier one.
+ */
+function fedRingIn(slots: number[]): Placement[] {
+  const placements: Placement[] = []
+  const pool = [...CATALOG]
+  for (const slotIndex of slots) {
+    if (!growFed(placements, pool, slotIndex)) return []
   }
   return placements
 }
@@ -114,14 +170,22 @@ interface Row {
   /** Currencies the reagents released, whether or not any survived to the mouth. */
   width: number
   delivered: Partial<Record<Currency, number>>
+  /** Whether the ring answered what the form asks. Null for the prayer, which asks nothing. */
+  met: boolean | null
 }
 
-function resolve(ring: Placement[]): Row {
-  const reaction = computeReaction(ring)
+function resolve(ring: Placement[], form: SpellForm = PLAIN): Row {
+  const reaction = computeReaction(ring, form)
 
-  // Law 1, checked on every ring: every unit a reagent released either was drawn
-  // by another slot, bled away, or left at the mouth. The one law that cannot
-  // move, so the harness throws rather than reporting.
+  // Law 1, checked on every ring and under every form: every unit a reagent
+  // released either was drawn by another slot, bled away, or left at the mouth.
+  // The one law that cannot move, so the harness throws rather than reporting.
+  //
+  // A measured reagent balances here without a special case: it released a cut-down
+  // yield, and `released` is what it actually put into the ring rather than what the
+  // catalog says it carries. A form that let a reagent release a yield it was never
+  // fed would trip this immediately, which is the point — it is the guard rail on
+  // the whole form mechanism.
   let released = 0
   let received = 0
   for (const slot of reaction.slots) {
@@ -152,6 +216,7 @@ function resolve(ring: Placement[]): Row {
     bled: reaction.bledTotal,
     width: raised.size,
     delivered,
+    met: reaction.conditionMet,
   }
 }
 
@@ -267,7 +332,7 @@ for (const currency of CURRENCIES) {
  * stands, and this is the check that it stays that way.
  */
 function relayProbe(): void {
-  const source = CATALOG.find((c) => ledgerTotal(c.demands) === 0 && ledgerAmount(c.yields, 'motion') >= 10)
+  const source = MOTION_SOURCE
   if (!source) {
     console.log('\n=== the relay crossing: no motion source in the catalog to probe with ===')
     return
@@ -292,10 +357,16 @@ function relayProbe(): void {
   const probeReagent = reagent('probe reagent', { heat: 12 })
 
   const arriving = (occupant: MaterialComponent) => {
-    const r = computeReaction([
-      { slotIndex: 1, component: source },
-      { slotIndex: 3, component: occupant },
-    ])
+    // Under the prayer: the two forms that spare the transit would make the relay
+    // and the reagent cost the same, which is correct behaviour and useless as a
+    // probe of the relay rule.
+    const r = computeReaction(
+      [
+        { slotIndex: 1, component: source },
+        { slotIndex: 3, component: occupant },
+      ],
+      PLAIN,
+    )
     return ledgerTotal(r.slots.find((s) => s.slotIndex === 3)?.received ?? {})
   }
 
@@ -326,8 +397,8 @@ function relayProbe(): void {
  */
 function isolatedRelaysMustCost(): void {
   const relays = CATALOG.filter((c) => describeRole(c) === 'relay')
-  const sources = CATALOG.filter((c) => ledgerTotal(c.demands) === 0)
-  const rest = CATALOG.filter((c) => describeRole(c) !== 'relay' && ledgerTotal(c.demands) > 0)
+  const sources = SOURCES
+  const rest = NON_SOURCES.filter((c) => describeRole(c) !== 'relay')
   let gained = 0
   let tolled = 0
   let free = 0
@@ -347,8 +418,8 @@ function isolatedRelaysMustCost(): void {
       { slotIndex: 5, component: pick(relays) },
       { slotIndex: 7, component: pick(relays) },
     ]
-    const bare = computeReaction(ring)
-    const withRelays = computeReaction(padded)
+    const bare = computeReaction(ring, PLAIN)
+    const withRelays = computeReaction(padded, PLAIN)
     const extraToll = withRelays.tollTotal - bare.tollTotal
     gained += withRelays.manifestationTotal - bare.manifestationTotal
     tolled += extraToll
@@ -373,8 +444,268 @@ function isolatedRelaysMustCost(): void {
   )
 }
 
+// -------------------------------------------------------------------- forms
+
+/**
+ * The seven forms over the same rings, and the three questions worth asking of
+ * them.
+ *
+ * Is each form ever the right choice? Two win columns, because there is no single
+ * objective in this game and a form that serves neither is dead in the picker.
+ * `loud` counts rings where the form delivered most, and `cheap` counts rings where
+ * it scored best on manifestation minus toll.
+ *
+ * Read `cheap` with care. It treats a unit taken out of the caster as exactly as
+ * bad as a unit delivered, which makes doing nothing a strong play: a holding form
+ * scoring 0 beats a firing form scoring 18 against a toll of 25. That is what
+ * exposed the first cut of the underfed rule, where a binary hold made the three
+ * measuring forms sweep `cheap` at an average manifestation of 0.6.
+ *
+ * Is each condition a real question? `met` is the share of rings answering it. At
+ * 100% the condition is free and the forfeit is unreachable; at 0% the boon is.
+ *
+ * Do the measuring forms ever charge? They must not, under any ring, which is
+ * asserted rather than reported.
+ */
+function formReport(): void {
+  interface FormCell {
+    n: number
+    manifestation: number
+    toll: number
+    bled: number
+    met: number
+    loud: number
+    cheap: number
+  }
+  const cells = new Map<SpellForm, FormCell>(
+    SPELL_FORMS.map((form) => [
+      form,
+      { n: 0, manifestation: 0, toll: 0, bled: 0, met: 0, loud: 0, cheap: 0 },
+    ]),
+  )
+
+  state = 0x5eed1e
+  const SAMPLES = 2000
+
+  for (let reagents = 1; reagents <= RING_SLOT_COUNT; reagents++) {
+    for (let i = 0; i < SAMPLES; i++) {
+      const ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
+      let loudest: SpellForm | null = null
+      let loudestScore = -Infinity
+      let cheapest: SpellForm | null = null
+      let cheapestScore = -Infinity
+
+      for (const form of SPELL_FORMS) {
+        const row = resolve(ring, form)
+        const cell = cells.get(form)!
+        cell.n++
+        cell.manifestation += row.manifestation
+        cell.toll += row.toll
+        cell.bled += row.bled
+        if (row.met) cell.met++
+
+        if (FORM_META[form].underfed === 'measure' && row.toll !== 0) {
+          throw new Error(`${form} measures but charged a toll of ${row.toll}`)
+        }
+
+        if (row.manifestation > loudestScore) {
+          loudestScore = row.manifestation
+          loudest = form
+        }
+        const score = row.manifestation - row.toll
+        if (score > cheapestScore) {
+          cheapestScore = score
+          cheapest = form
+        }
+      }
+
+      cells.get(loudest!)!.loud++
+      cells.get(cheapest!)!.cheap++
+    }
+  }
+
+  console.log('\n=== the seven forms over the same rings ===')
+  console.log(
+    'form         underfed' +
+      ['manif', 'toll', 'bled', 'met', 'loud', 'cheap'].map((h) => h.padStart(8)).join(''),
+  )
+  const dead: SpellForm[] = []
+  for (const [form, c] of cells) {
+    const avg = (total: number) => (total / c.n).toFixed(1).padStart(8)
+    const pct = (count: number) => `${Math.round((count / c.n) * 100)}%`.padStart(8)
+    console.log(
+      form.padEnd(13) +
+        FORM_META[form].underfed.padEnd(8) +
+        avg(c.manifestation) +
+        avg(c.toll) +
+        avg(c.bled) +
+        (FORM_META[form].condition ? pct(c.met) : '-'.padStart(8)) +
+        pct(c.loud) +
+        pct(c.cheap),
+    )
+    if (c.loud === 0 && c.cheap === 0) dead.push(form)
+  }
+  console.log(
+    dead.length === 0
+      ? 'every form wins on one objective or the other  OK'
+      : `never the best choice either way: ${dead.join(', ')}  DEAD FORM`,
+  )
+}
+
+/**
+ * Each form on ground it chose: rings that answer its condition, scored against the
+ * prayer on the very same ring.
+ *
+ * Run twice, over rings drawn two ways, and the pair is the point.
+ *
+ * On **careless** rings — reagents thrown in — the four crediting forms look strong
+ * and the three measuring ones look broken. They are not. A careless ring feeds the
+ * average slot 38% of what it asked, and the prayer's output there is almost
+ * entirely reagents firing on demands nothing ever met, which is exactly what its
+ * toll of 20-odd is buying. A measuring form declines that credit, so it delivers
+ * little and charges nothing, and the comparison is a statement about the two
+ * underfed rules rather than about either form.
+ *
+ * On **fed** rings — every reagent supplied in full — a measuring form and the
+ * prayer resolve identically, because nothing is stinted when nothing is short.
+ * Whatever separates them there is the condition alone, which is what the boon is
+ * actually worth. This is the column to read when tuning a condition.
+ *
+ * Rings are found by rejection: draw, then keep the ones the real predicate accepts,
+ * so the shapes are never described twice and cannot drift from `FORM_META`. Failing
+ * to find any is itself the reachability check — a condition no ring satisfies is a
+ * form that only ever carries its forfeit.
+ */
+function formsOnTheirOwnGround(): void {
+  const WANTED = 1200
+  const CAP = 300000
+
+  for (const cohort of ['careless', 'fed'] as const) {
+    state = cohort === 'fed' ? 0xfed0fed : 0xd16e5
+    // Feeding an arbitrary slot set is dear, so the fed cohort is smaller and
+    // screens the shape with a throwaway random ring before paying for the fill.
+    const wanted = cohort === 'fed' ? 300 : WANTED
+    const cap = cohort === 'fed' ? 60000 : CAP
+    console.log(`\n=== each form on ${cohort} rings that answer it, against the prayer ===`)
+    console.log(
+      'form         rings' +
+        ['manif', 'toll', 'vs plain', 'plaintoll'].map((h) => h.padStart(10)).join(''),
+    )
+
+    for (const form of SPELL_FORMS) {
+      if (!FORM_META[form].condition) continue
+
+      let found = 0
+      let tries = 0
+      let manifestation = 0
+      let toll = 0
+      let plainManifestation = 0
+      let plainToll = 0
+
+      while (found < wanted && tries < cap) {
+        tries++
+        const reagents = 1 + Math.floor(rand() * RING_SLOT_COUNT)
+        let ring: Placement[]
+        if (cohort === 'fed') {
+          // Screen a throwaway ring in these slots first. It settles the four
+          // conditions that only read the shape, and costs nothing next to the fill.
+          const shape = randomRing(reagents)
+          if (!conditionRelief(form, shape).met) continue
+          ring = fedRingIn(shape.map((p) => p.slotIndex))
+        } else {
+          ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
+        }
+        if (ring.length === 0) continue
+        // The gate is the predicate itself, not a resolved ring. `computeReaction`
+        // reads `conditionMet` straight off `conditionRelief` before it walks a
+        // single slot, and most draws here are rejected — paying for a full walk to
+        // answer a question about slot indices was most of this harness's runtime.
+        if (!conditionRelief(form, ring).met) continue
+
+        found++
+        const own = resolve(ring, form)
+        const plain = resolve(ring, PLAIN)
+        manifestation += own.manifestation
+        toll += own.toll
+        plainManifestation += plain.manifestation
+        plainToll += plain.toll
+      }
+
+      if (found === 0) {
+        // Expected for the elegy when fed, and only for the elegy: it forbids a
+        // source anywhere, so the first reagent the current reaches has nothing to
+        // draw on and must starve. An elegy always pays something, by construction.
+        const why = cohort === 'fed' && form === 'elegy' ? '  (no source, so it cannot be fed)' : ''
+        console.log(`${form.padEnd(13)}UNREACHABLE in ${tries} tries${why}`)
+        continue
+      }
+      const avg = (total: number) => (total / found).toFixed(1).padStart(10)
+      console.log(
+        form.padEnd(13) +
+          String(found).padEnd(5) +
+          avg(manifestation) +
+          avg(toll) +
+          avg(plainManifestation) +
+          avg(plainToll) +
+          (found < wanted ? `   only ${found} in ${tries} tries` : ''),
+      )
+    }
+  }
+}
+
+/**
+ * A crossing must be paid by the current it is carrying, not by whatever else
+ * happens to be in the ring.
+ *
+ * The pair: a reagent fed across two holes, with and without an unrelated source
+ * standing at slot I. Billing the oldest parcel first made the source absorb every
+ * crossing in the lap, so the chain behind it travelled free and the same arc read
+ * 7 with the source and 2 without. Both readings must now agree.
+ *
+ * The second half is the other side of the same rule. A lone source demands
+ * nothing, so nothing it carries was ever asked for; without the fallback to the
+ * oldest current it would ride the whole ring untouched and cross for free.
+ */
+function transitPayerProbe(): void {
+  const source = MOTION_SOURCE
+  const feeder = CATALOG.find((c) => ledgerAmount(c.yields, 'heat') >= 7)
+  const eater = CATALOG.find((c) => ledgerAmount(c.demands, 'heat') >= 7)
+  if (!source || !feeder || !eater) {
+    console.log('\n=== the transit payer: no heat chain in the catalog to probe with ===')
+    return
+  }
+
+  // Slots I, III and VI: two holes between the feeder and the reagent waiting on it.
+  const chain: Placement[] = [
+    { slotIndex: 2, component: feeder },
+    { slotIndex: 5, component: eater },
+  ]
+  const arriving = (ring: Placement[]) =>
+    ledgerAmount(computeReaction(ring, PLAIN).slots.find((s) => s.slotIndex === 5)?.received ?? {}, 'heat')
+
+  const alone = arriving(chain)
+  const shielded = arriving([{ slotIndex: 0, component: source }, ...chain])
+
+  const lone = computeReaction([{ slotIndex: 0, component: source }], PLAIN)
+  const lap = ledgerTotal(source.yields) - lone.bledTotal
+
+  console.log('\n=== the transit payer (feeder at III, hole, hole, reagent at VI) ===')
+  console.log(`${feeder.name} releases heat ${ledgerAmount(feeder.yields, 'heat')}`)
+  console.log(`  reached ${eater.name} at VI            ${alone}`)
+  console.log(`  the same, with ${source.name} at I  ${shielded}`)
+  console.log(
+    `  a source cannot pay another chain's way  ${alone === shielded ? 'OK' : 'BROKEN: the chain was shielded'}`,
+  )
+  console.log(
+    `  a lone source still decays over its lap  ${lap <= 0 ? 'OK' : `BROKEN: ${lap} units crossed free`}`,
+  )
+}
+
 relayProbe()
+transitPayerProbe()
 isolatedRelaysMustCost()
+formReport()
+formsOnTheirOwnGround()
 
 // One ring, resolved and printed slot by slot, to read against the laws as written.
 const worked: Placement[] = [
@@ -390,7 +721,7 @@ const worked: Placement[] = [
 }))
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
-const reaction = computeReaction(worked)
+const reaction = computeReaction(worked, PLAIN)
 console.log('\n=== worked example: weight, lodestone, bismuth, tourmaline, charcoal, hoarfrost ===')
 function show(ledger: Parameters<typeof ledgerEntries>[0]): string {
   const entries = ledgerEntries(ledger).map(([c, n]) => `${CURRENCY_META[c].short} ${n}`)
@@ -406,3 +737,19 @@ for (const slot of reaction.slots) {
 console.log(`manifestation ${show(reaction.manifestation)}  (${reaction.manifestationTotal})`)
 console.log(`toll          ${show(reaction.toll)}  (${reaction.tollTotal})`)
 console.log(`bled          ${show(reaction.bled)}  (${reaction.bledTotal})`)
+
+// The same six reagents in the same slots, said seven ways. This is the one place
+// the whole form mechanism is legible at a glance rather than as an average.
+console.log('\n=== that same ring, spoken seven ways ===')
+console.log('form         cond' + ['manif', 'toll', 'bled'].map((h) => h.padStart(8)).join(''))
+for (const form of SPELL_FORMS) {
+  const r = computeReaction(worked, form)
+  const mark = r.conditionMet === null ? '  - ' : r.conditionMet ? ' met' : 'fail'
+  console.log(
+    form.padEnd(13) +
+      mark +
+      String(r.manifestationTotal).padStart(8) +
+      String(r.tollTotal).padStart(8) +
+      String(r.bledTotal).padStart(8),
+  )
+}

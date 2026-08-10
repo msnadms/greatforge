@@ -23,10 +23,15 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *   Relays     give back the whole of what they take, so current crosses them
  *              for nothing — the wire of the circle
  *
- * A fifth role, the sink, is authorable but not stocked: a reagent that demands
- * and yields nothing can only ever lower what leaves the ring, so it is a tool
- * for deciding what a spell does *not* do rather than a way to make one stronger.
- * Nothing stops the user writing one; there is just no reason to ship examples.
+ *   Sinks      swallow and give nothing back. Two of them, and they were added
+ *              for the dirge: that form is spared the spill only while a sink
+ *              stands in the ring, and with none in the catalog it could never be
+ *              satisfied without the user authoring one first. Before forms were
+ *              behavioural the role was deliberately unstocked, on the grounds
+ *              that a reagent which only ever lowers what leaves the ring is a
+ *              tool for deciding what a spell does *not* do rather than a way to
+ *              make one stronger. That is still true of the role; the dirge is now
+ *              the reason to reach for it.
  *
  * The numbers are tuned against four facts about the resolver that are easy to
  * miss and dominate everything:
@@ -305,6 +310,27 @@ const SEEDS: SeedSpec[] = [
       'Cut lengthwise, it shows a spiral of some thirty sealed chambers, each walled off as the animal outgrew it. A thread of tissue runs the length of the spiral and floods or empties the chambers in turn, shifting the weight along the shell to rise or sink.',
     demands: { mass: 8 },
     yields: { mass: 8 },
+    rarity: 'uncommon',
+  },
+
+  // ---- Sinks: they swallow and hand back nothing ----
+  // Two, against the two currencies easiest to raise, so there is always something
+  // worth taking out of a manifestation. A dirge also needs one of these standing
+  // in the ring before it is spared the spill.
+  {
+    name: 'Lampblack',
+    description:
+      'Soot taken off a lamp chimney and bound with a little size. Laid on thick it is the blackest surface the bench can make: light falling on it is not thrown back at any angle, and a mark in it reads as a hole rather than as a colour.',
+    demands: { light: 9 },
+    yields: {},
+    rarity: 'common',
+  },
+  {
+    name: "Glauber's Salt",
+    description:
+      'Clear crystals that hold their water loosely. Warmed a little past blood heat they collapse into that water, and they take a great deal of warmth to do it, so the jar stands cold against the hand the whole while it is melting.',
+    demands: { heat: 8 },
+    yields: {},
     rarity: 'uncommon',
   },
 ]

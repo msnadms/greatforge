@@ -218,10 +218,40 @@
   opacity: 0.5;
 }
 
+/*
+ * A reagent's name, engraved on the rim of a working being read. The token shows
+ * a sigil and no words, so the name is set outside every ring where it crowds
+ * neither the glyph nor the arcs.
+ *
+ * Sized in stage units like the strokes above it, not in screen pixels: the whole
+ * engraving is drawn in a 100-unit box that scales with the circle, so a name set
+ * here grows and shrinks with the ring it is cut into.
+ */
+.circle__name {
+  fill: var(--rune);
+  font-family: var(--heading);
+  font-size: 1.8px;
+  letter-spacing: 0.1px;
+  text-anchor: middle;
+}
+
 .circle__spoke {
   stroke: var(--border-strong);
   stroke-width: 0.08;
   opacity: 0.4;
+}
+
+/*
+ * The mouth, cut between slot VIII and slot I. It is heavier than a spoke and
+ * runs out past the outer ring, since the whole point of it is that the current
+ * leaves the circle here — a spoke's weight would read as a ninth division.
+ * Engraving rather than state, so it takes the border colour and never the
+ * accent or the gilt, both of which mean something the caster did.
+ */
+.circle__mouth {
+  stroke: var(--border-strong);
+  stroke-width: 0.22;
+  stroke-linecap: round;
 }
 
 /*
@@ -366,6 +396,34 @@
   opacity: 0.45;
 }
 
+/*
+ * A working being read collapses its filled slots to the round token an empty
+ * slot already is, so the ring is eight of one shape and the arcs between them
+ * are the loudest thing on the circle. The card is the width it is to hold a
+ * name and a ledger; a viewed token shows neither, so the width was only pushing
+ * the eight of them out against the book.
+ *
+ * The numeral stacks above the sigil rather than sitting in the gutter it has on
+ * a card: there is no gutter left, and 'VIII' laid beside a centred glyph in
+ * 58px would cross it.
+ */
+.circle--view .slot--filled {
+  width: 58px;
+  height: 58px;
+  min-height: 0;
+  border-radius: 50%;
+  padding: 0;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.circle--view .slot--filled .slot__rune {
+  position: static;
+  transform: none;
+  font-size: 9px;
+  line-height: 1;
+}
+
 .slot--over {
   border-color: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-bg);
@@ -378,6 +436,34 @@
     /* Pulled back to sit with the muted currency glows; still the loudest of them. */
     0 0 18px -4px hsl(0 45% 50% / 0.45),
     var(--shadow);
+}
+
+/*
+ * A slot the spoken form's condition names, marked whether the condition holds or
+ * not — the wash says the form is looking here, and the panel says how it went.
+ *
+ * Gilt, and never red: red is unmet demand, and a reagent washed in it would read
+ * as starved when the form has only pointed at it. It is a fill rather than a
+ * border so it cannot be confused with `.slot--starved` either, which keeps the
+ * edge and the glow. An empty slot gets an inner ring as well, since 14% of
+ * anything over a dashed 58px circle is nearly nothing.
+ */
+.slot--named::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--named-wash);
+  pointer-events: none;
+}
+
+.slot--named.slot--empty::after {
+  box-shadow: inset 0 0 0 1px var(--named);
+}
+
+.slot--named .slot__rune {
+  color: var(--named);
+  opacity: 0.85;
 }
 
 .slot__toll {
@@ -421,6 +507,25 @@
   font-size: 13px;
   line-height: 1.2;
 }
+
+/*
+ * The role sigil, which stands where the name does on a working being read.
+ * Drawn in the reagent's own pigment at the reserved saturation `--gem-s` is
+ * for, since it is a stroke and sits beside the demand pips that use the same
+ * pairing.
+ */
+.slot__sigil {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: hsl(var(--slot-hue, 40) var(--gem-s) var(--gem-l));
+}
+
+.slot__sigil svg {
+  width: 22px;
+  height: 22px;
+}
+
 
 /* ---------------------------------------------------------- ledger readouts */
 
@@ -719,16 +824,72 @@
   color: var(--rune);
 }
 
-.reaction__formLine strong {
+/*
+ * The form's name and the underfed setting's name, both of which carry their prose
+ * on hover. The dotted rule under them is the only thing saying so, so it goes on
+ * both and nowhere else on this line.
+ */
+.reaction__formLine strong,
+.reaction__formTag {
   color: var(--accent);
   font-weight: 600;
+  cursor: help;
+  text-decoration: underline dotted var(--accent-border);
+  text-underline-offset: 3px;
 }
 
-.reaction__formRule {
+/*
+ * What the form asks of the circle, and whether the circle as placed answers it.
+ * Gilt for held, danger for failed — the same two tokens the rest of the bench
+ * uses for a working that is sound and one that is costing the caster, so the
+ * condition reads at a glance while reagents are being moved around. A cold circle
+ * takes neither and sits in the plain border.
+ */
+.reaction__condition {
+  margin-top: 3px;
+  padding: 6px 8px;
+  border: 1px solid var(--cond-edge);
+  border-left-width: 2px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--cond-edge) 10%, transparent);
+}
+
+.reaction__condition--met {
+  --cond-edge: var(--gilt);
+}
+
+.reaction__condition--unmet {
+  --cond-edge: var(--danger);
+}
+
+/* Nothing placed yet, so neither token applies: an empty circle has not failed its
+   form, and painting it in danger would say it had. */
+.reaction__condition--cold {
+  --cond-edge: var(--border-strong);
+}
+
+.reaction__conditionHead {
+  margin: 0 0 3px;
+  font-family: var(--heading);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--cond-edge);
+}
+
+.reaction__conditionText {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: var(--text-h);
+}
+
+.reaction__conditionCost {
+  margin: 4px 0 0;
+  font-size: 11px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--rune);
 }
 
 
@@ -945,7 +1106,6 @@
   margin-left: auto;
 }
 
-.tray__hint,
 .tray__empty {
   font-size: 12px;
   font-style: italic;
@@ -1374,5 +1534,10 @@ body.is-dragging * {
 
   .slot__name {
     font-size: 11px;
+  }
+
+  .slot__sigil svg {
+    width: 19px;
+    height: 19px;
   }
 }

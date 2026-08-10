@@ -28,6 +28,11 @@
   --accent-bg: rgba(123, 63, 191, 0.12);
   --accent-border: rgba(123, 63, 191, 0.55);
   --danger: #9b2c2c;
+  /* The slots a form's condition names, in the gilt the engraving is written in.
+     Red is unmet demand and nothing else: a named slot is the form pointing at
+     it, which costs the caster nothing and must not read as a bill. */
+  --named: #9a6f1f;
+  --named-wash: rgba(154, 111, 31, 0.14);
   --shadow:
     rgba(48, 34, 18, 0.14) 0 10px 15px -3px, rgba(48, 34, 18, 0.08) 0 4px 6px -2px;
 
@@ -70,6 +75,10 @@
     --accent-bg: rgba(192, 132, 252, 0.16);
     --accent-border: rgba(192, 132, 252, 0.5);
     --danger: #e07070;
+    /* Candlelight carries the wash a little heavier; a 14% film of anything is
+       nearly invisible over a dark panel. */
+    --named: #d8a94a;
+    --named-wash: rgba(216, 169, 74, 0.16);
     --shadow:
       rgba(0, 0, 0, 0.5) 0 10px 15px -3px, rgba(0, 0, 0, 0.3) 0 4px 6px -2px;
   }

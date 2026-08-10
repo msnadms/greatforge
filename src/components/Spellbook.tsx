@@ -1,4 +1,4 @@
-import { FORM_LIST, FORM_META } from '../data/spellForms'
+import { FORM_LIST, FORM_META, UNDERFED_RULE } from '../data/spellForms'
 import { useWorkshop } from '../state/useWorkshop'
 import { RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
 
@@ -11,7 +11,7 @@ import { RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
  * what they are set in, which is how the two differ in the book anyway.
  */
 function BookView() {
-  const { draft, reaction, editDraft } = useWorkshop()
+  const { draft, editDraft } = useWorkshop()
   const form = FORM_META[draft.form]
 
   return (
@@ -19,8 +19,7 @@ function BookView() {
       <div className="book__page book__page--left">
         <h2 className="book__viewTitle">{draft.title || 'Untitled working'}</h2>
         <p className="book__viewForm">
-          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()} · {reaction.filled} of{' '}
-          {RING_SLOT_COUNT} reagents
+          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()}
         </p>
         {draft.notes ? <p className="book__viewNotes">{draft.notes}</p> : null}
       </div>
@@ -65,17 +64,17 @@ function BookEditor() {
             value={draft.form}
             onChange={(event) => updateDraft({ form: event.target.value as SpellForm })}
           >
+            {/* The option is the form's name and nothing else. What it does to the
+                resolver is hover text here, the same as the role hints in the tray,
+                and it is on the page in the reaction panel, where the condition can
+                be judged against the circle as placed. */}
             {FORM_LIST.map((entry) => (
-              <option key={entry.form} value={entry.form}>
+              <option key={entry.form} value={entry.form} title={UNDERFED_RULE[entry.underfed]}>
                 {entry.label}
               </option>
             ))}
           </select>
         </label>
-
-        {/* The picker carries no description of its own: what kind of saying each
-            form is belongs in the reaction panel, and the form changes nothing
-            about the reaction, so it must not read as a dial on it. */}
 
         <label className="field field--grow">
           <span className="field__label">Notes</span>

@@ -108,9 +108,10 @@ export function WorkshopProvider({
     [draft.slots, componentsById],
   )
 
-  // The form is a label, not an input: the reagents and their order decide the
-  // whole reaction, so the picker does not re-resolve. See `data/spellForms.ts`.
-  const reaction = useMemo(() => computeReaction(placements), [placements])
+  // The form is an input: it decides what an underfed reagent does and whether the
+  // circle met the condition the form states, so changing the picker re-resolves
+  // the whole ring. See `data/spellForms.ts`.
+  const reaction = useMemo(() => computeReaction(placements, draft.form), [placements, draft.form])
 
   /**
    * Every change to the working funnels through here and `updateDraft`, and both

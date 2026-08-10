@@ -94,9 +94,17 @@ export const CURRENCY_LIST: CurrencyMeta[] = CURRENCIES.map((c) => CURRENCY_META
  * The whole system, stated. A hard magic is one the reader can do arithmetic in,
  * so these are shown in the app rather than kept in a designer's notebook.
  *
- * These hold without exception. Forms used to bend them, one law apiece, and a
- * seventh law stated that bargain; forms are now the manner a working is spoken in
- * and nothing else, so every law here is simply true and the seventh is gone.
+ * Six of the seven hold without exception. The seventh states the two things a
+ * form is permitted to change and bounds them: a form decides what an underfed
+ * reagent does, and its condition spares or doubles one named loss. Where a form
+ * can touch a law, that law says so and points at the seventh.
+ *
+ * Forms have been through three arrangements now. They began as seven separate
+ * knobs, one law bent apiece, with a seventh law stating the bargain and a toll
+ * charged for the bending. They were then cosmetic, and the seventh law went. They
+ * are behavioural again, but as two mechanisms shared by all seven rather than as
+ * seven special cases, and the seventh law is back to bound them — this time
+ * saying what a form may *never* do, which is add.
  *
  * They are the statement of what `lib/reaction.ts` does. Changing a resolver rule
  * means editing this array in the same change, or the app is lying to the user.
@@ -104,27 +112,31 @@ export const CURRENCY_LIST: CurrencyMeta[] = CURRENCIES.map((c) => CURRENCY_META
 export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   {
     title: 'Nothing is made',
-    body: 'Every unit in the circle came out of a reagent, and nothing in flight is ever multiplied: a slot hands on what it was given, less what the crossing took. What a material has to give it was already carrying, and it gives it out of its own substance — a reagent that has spoken is spent.',
+    body: 'Every unit came out of a reagent, and nothing in flight is multiplied — a slot hands on what it was given, less what the crossing took. A reagent that has spoken is spent.',
   },
   {
     title: 'The current runs one way',
-    body: 'Clockwise, from slot to slot, paying what each slot is made of: two units to leap a gap, one unit across an ordinary reagent, and nothing at all through a relay, wherever it stands. A relay is a reagent that hands back precisely what it was given, unit for unit and currency for currency; ask one unit more of it, or let it give one unit less, and it is some other kind of reagent and its crossing costs the ordinary unit. That is the only thing a relay does differently: reached across a hole it costs the hole and nothing more, where any other reagent would cost the hole and then a unit of its own. Loss belongs to the medium and not to what is crossing it, so a crossing takes the same units whether the ring is carrying one currency or five, and it takes them from whatever has been in flight longest: the current released earliest is the current that dies.',
+    body: 'Clockwise, and each crossing is charged against the current as a whole, one currency or five: two units through a gap, one through an ordinary reagent, none through a relay, wherever it stands. A relay is a reagent whose two columns read alike to the unit; one unit either way and it is something else, costing the ordinary unit. The price is billed to the currency the next slot demanded and the remainder to the oldest in flight, so a supply pays its own way to the reagent waiting on it. A form may waive these prices or double them; see the seventh law.',
   },
   {
     title: 'The circle is walked once, then closed',
-    body: 'Slot I is lit first and so is fed last, when the current comes back around. Slot VIII stands nearest the mouth: its surplus leaves having crossed only one slot, and a lap costs eight — so what you put late is what you get, and what you put early has to be large enough to survive the walk.',
+    body: 'Slot I is lit first and fed last; slot VIII stands nearest the mouth, its surplus leaving across one slot. A lap costs eight, so what you set late is what you get, and what you set early must be large enough to survive the walk.',
   },
   {
     title: 'An open slot is a hole in the circle',
-    body: 'Current spills out of a hole. Whatever the ring still holds at the mouth leaves it in the proportion the ring was closed: eight reagents deliver all of it, four deliver half, two deliver a quarter. Filling the circle creates nothing — a full ring is simply the one that does not leak.',
+    body: 'Whatever the ring still holds at the mouth leaves it in the proportion the ring was closed: eight reagents deliver all of it, four deliver half, two a quarter. A reagent that stands without reacting still closes its hole. A form may waive the spill or double it; see the seventh law.',
   },
   {
     title: 'Each material stands once and is asked once',
-    body: 'No reagent may stand in two places at the same time: set one down where it already lies further round the ring and it is lifted from the old slot, not copied into the new, so eight slots mean eight different materials and the order you set them in is most of the craft. Nor may the ring ask a material twice. It is asked as the current reaches it, it gives the measure it holds, and the current comes back around to a reagent with nothing left in it.',
+    body: 'Set a reagent down where it already lies and it is lifted from the old slot, not copied into the new, so eight slots mean eight materials and the order is most of the craft. Each is asked once, as the current reaches it, and has nothing left when the current comes back around.',
   },
   {
-    title: 'What the ring cannot supply, the body supplies',
-    body: 'Every demand the ring does not meet is drawn out of the caster at the published rate. That is the toll, and it is the only thing a casting ever costs the body: a circle that feeds every reagent standing in it is free to speak, however large it is and however much it makes. Nothing else is charged, and no wording, posture or hour of the day moves what is charged elsewhere. Build the circle so that it feeds itself, or pay for the part that does not.',
+    title: 'A reagent the ring underfeeds is paid for, or it gives less',
+    body: 'Every demand the ring cannot meet is settled one of two ways, and the form decides which. Under a volatile form (prayer, elegy, litany, invocation) the reagent reacts in full and the shortfall is drawn out of the caster. That toll is the only thing a casting ever costs the body, so a circle that feeds itself is free to speak at any size. Under a stable form (dirge, ward, benediction) it hands back only the share of its yield the ring fed it, rounded down, and nothing is charged.',
+  },
+  {
+    title: 'A form asks one thing, and can only ever spare a loss',
+    body: 'Every form but the prayer states one condition, printed with the working. Meet it and one loss is waived — the crossings, or the spill at the mouth; fail it and that same loss doubles, to four units across a gap and two across a reagent, or the share squared. No form adds: where a loss falls is all a form decides, so the first law holds in all seven.',
   },
 ]
 
@@ -144,6 +156,20 @@ export function blendHues(currencies: Currency[]): number {
   }
   const deg = (Math.atan2(y, x) * 180) / Math.PI
   return (deg + 360) % 360
+}
+
+/**
+ * A ledger as running text: "Heat 5, Motion 2".
+ *
+ * For the places prose has to *say* a ledger rather than draw it — tooltips and
+ * the labels read aloud — where `LedgerLine`'s chips are not available. `empty`
+ * is the word for a ledger with nothing in it, which reads differently in
+ * different sentences.
+ */
+export function describeLedger(ledger: Ledger, empty = 'nothing'): string {
+  const entries = ledgerEntries(ledger)
+  if (entries.length === 0) return empty
+  return entries.map(([currency, amount]) => `${CURRENCY_META[currency].label} ${amount}`).join(', ')
 }
 
 function currenciesIn(ledger: Ledger): Currency[] {

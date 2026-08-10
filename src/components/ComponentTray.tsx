@@ -243,22 +243,6 @@ export function ComponentTray() {
           )}
         </div>
       </div>
-
-      <p className="tray__hint">
-        {canPlace ? (
-          <>
-            Drag a component onto a slot, or select it and click a slot. Order matters: the current
-            runs clockwise from slot I, paying nothing through a relay, one through any other reagent,
-            and two across a gap.
-          </>
-        ) : (
-          <>
-            An inscribed working is open. Its circle is laid out as it was written; take it back to
-            the bench with Edit to move a reagent.
-          </>
-        )}
-      </p>
-
       {loading ? (
         <p className="tray__empty">Opening the codex…</p>
       ) : visible.length === 0 ? (

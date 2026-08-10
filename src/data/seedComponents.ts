@@ -16,10 +16,20 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              ignition and not payload, and they are kept scarce on purpose: a
  *              reagent that demands nothing can never be billed, so every source
  *              added to the catalog is another way to cast without paying a toll
- *   Fuels      take a little and give a lot; they carry what was stored in them
- *   Converters trade one currency for another and hand back a little more than
- *              they took. The profit is small next to a fuel, but conversion is
- *              the only route into charge and mass
+ *   Fuels      take a little and give a little more, carrying what was stored in
+ *              them. There are only four, on purpose — three that stay within
+ *              heat and one that carries into light — and together with the three
+ *              sources they are the only seven reagents in the whole catalog that
+ *              never cost you anything to use. Seven is one short of a ring: an
+ *              eight-reagent working is guaranteed to need at least one thing
+ *              from below, and every currency but heat and light is entirely shut
+ *              behind that door
+ *   Converters trade one currency for another, and most of them lose on the
+ *              trade. A handful turn a real profit and are the only reliable way
+ *              into mass, charge and the return trip into light and motion; the
+ *              rest still move the currency you need, just at a cost, which is
+ *              what makes knowing the few good routes worth learning rather than
+ *              a thing the ring does for you
  *   Relays     give back the whole of what they take, so current crosses them
  *              for nothing — the wire of the circle
  *
@@ -33,7 +43,7 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              make one stronger. That is still true of the role; the dirge is now
  *              the reason to reach for it.
  *
- * The numbers are tuned against four facts about the resolver that are easy to
+ * The numbers are tuned against five facts about the resolver that are easy to
  * miss and dominate everything:
  *
  *  - Transit loss is a flat amount off the current as a whole, so a full lap
@@ -41,12 +51,6 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *    longest. That is the loss budget, and the working band runs 4–12 against
  *    it: a reagent at the front of the ring pays the whole lap, so below 8 it
  *    cannot reach the mouth at all.
- *
- *    The band was originally set when a crossing cost one unit of *every*
- *    currency in flight, which made a lap cost 8 per currency and erased
- *    anything under about 4 on the small side of a split ledger. Transit is flat
- *    now, so split ledgers survive far better than these numbers assume and the
- *    band is looser than it needs to be rather than tighter.
  *  - Because a material may occupy only one slot, no chain can be repeated.
  *    That is what keeps the fuels honest: a fire may feed a fire, but only
  *    along eight distinct reagents, so it bounds itself.
@@ -55,9 +59,23 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *    already in the ring — so the deepest currencies are reached only by
  *    conversion, and the converters that reach them carry the largest numbers
  *    in the catalog to pay for the detour.
- *  - Heat is the common input: most fuels and half the converters burn it. It is
- *    therefore the easiest currency to raise and the least profitable to keep,
- *    and the catalog leans on that rather than pretending the five are alike.
+ *  - Heat is the common input: nearly everything below the sources burns it.
+ *    It is therefore the easiest currency to raise and the least profitable to
+ *    keep, and the catalog leans on that rather than pretending the five are
+ *    alike.
+ *  - Only seven reagents in the catalog — three sources, four fuels — never cost
+ *    anything to place, and stacking every one of them still falls one short of
+ *    a full ring. Reaching slot VIII always means taking on at least one
+ *    converter, and the catalog only tells you which ones are worth it by
+ *    naming their numbers; nothing about which fifth of them turn a profit is
+ *    stated anywhere else. August 2026: this was not always true. Every fuel and
+ *    converter used to hand back more than it took, so the ring could not run
+ *    out of current, only out of matching currencies — an eight-reagent working
+ *    was reachable by grabbing anything that fit the last slot's colour, with no
+ *    penalty for not knowing the catalog. It reached zero toll on every attempt.
+ *    Thinning the free reagents to seven and making most conversions cost more
+ *    than they return is what makes that no longer true; see `sim/balance.ts`'s
+ *    `naiveChainProbe`.
  *
  * These are example data, not fixed rules; they can be edited and deleted like
  * anything the user authors.
@@ -90,29 +108,22 @@ const SEEDS: SeedSpec[] = [
     rarity: 'uncommon',
   },
 
-  // ---- Fuels: they release far more than they ask, out of what was stored ----
+  // ---- Fuels: they release a little more than they ask, out of what was stored ----
+  // Only four — the rest of what used to stand here converts at a loss now, see below.
   {
     name: 'Slow Match',
     description:
       'Loosely spun hemp cord, boiled in lye and dried. Touched to a flame it does not burn so much as smoulder, holding a coal at its tip that wind will not blow out. A finger’s length of it lasts a morning.',
     demands: { heat: 3 },
-    yields: { heat: 9 },
+    yields: { heat: 5 },
     rarity: 'common',
-  },
-  {
-    name: 'Clock Spring',
-    description:
-      'A flat steel ribbon wound tight against a sealed brass bellows. Warmth swells the bellows, which takes up the winding a notch at a time and holds it there. Drebbel built a clock on the principle that ran a year in a warm room with no hand on it.',
-    demands: { heat: 5 },
-    yields: { motion: 11 },
-    rarity: 'uncommon',
   },
   {
     name: 'Charcoal',
     description:
       'Wood burnt in a covered pit with the air shut out, until only the carbon is left. A spark will not catch it, but under a fire already going it holds a steady heat for an afternoon and leaves almost no ash.',
     demands: { heat: 5 },
-    yields: { heat: 11 },
+    yields: { heat: 9 },
     rarity: 'common',
   },
   {
@@ -120,7 +131,7 @@ const SEEDS: SeedSpec[] = [
     description:
       'Iron oxide and aluminium filings, stirred dry in equal measure. Nothing short of a burning ribbon will start it. Once started it runs white hot, needs no air, and burns down through the plate it is standing on.',
     demands: { heat: 6 },
-    yields: { heat: 12 },
+    yields: { heat: 10 },
     rarity: 'rare',
   },
   {
@@ -128,60 +139,17 @@ const SEEDS: SeedSpec[] = [
     description:
       'Bright metal drawn into a thin strip and coiled on a card. It will sit unlit in a candle flame all afternoon, but at a high enough heat it takes, and then it burns too white to look at directly and cannot be smothered. For all the glare there is very little warmth in it.',
     demands: { heat: 7 },
-    yields: { light: 12 },
+    yields: { light: 11 },
     rarity: 'uncommon',
-  },
-  {
-    name: 'Black Powder',
-    description:
-      'Saltpetre, charcoal and sulphur, milled damp together and corned into hard grains. The grains want a real flame rather than a stray spark, and they carry their own air, so nothing will slow the burning once it is going. All of it comes out at once, as a shove.',
-    demands: { heat: 7 },
-    yields: { motion: 12 },
-    rarity: 'common',
-  },
-  {
-    name: 'White Phosphorus',
-    description:
-      'Kept under water, cut under water, and handled wet. Left dry it takes fire from the air itself within a minute, without anything touching it. It burns with a hard white light and a heat that sticks to whatever it has landed on.',
-    demands: { mass: 6 },
-    yields: { light: 7, heat: 5 },
-    rarity: 'rare',
   },
 
-  // ---- Converters: one currency traded for another, at a small profit ----
-  // The only routes into charge and mass, and the reason the ring has a middle.
-  {
-    name: 'Foxfire',
-    description:
-      'Rotting oak shot through with honey fungus, kept damp in a covered box. The fungus digests the wood and gives off a cold green light while it does, steady enough to read a dial by and with no warmth in it at all. It works through a fair weight of timber a night.',
-    demands: { mass: 7 },
-    yields: { light: 10 },
-    rarity: 'rare',
-  },
-  {
-    name: 'Jet',
-    description:
-      'Fossilised wood, black and polished, light enough to float in brine and soft enough to carve with a knife. It takes a flame readily for a mineral and burns with a small bright one, giving off far more light than warmth.',
-    demands: { heat: 6 },
-    yields: { light: 9 },
-    rarity: 'uncommon',
-  },
-  {
-    name: 'Lampblack',
-    description:
-      'Soot collected off a smoking wick and packed into a cake. It is the blackest substance to be had, reflecting almost nothing that falls on it, and everything it fails to reflect it keeps as heat.',
-    demands: { light: 7 },
-    yields: { heat: 9 },
-    rarity: 'common',
-  },
-  {
-    name: 'Quicklime',
-    description:
-      'Burnt limestone, kept sealed because it draws damp straight out of the air. Given water outright it slakes: it swells, cracks the vessel holding it, and comes to the boil with no flame under it.',
-    demands: { mass: 7 },
-    yields: { heat: 9 },
-    rarity: 'common',
-  },
+  // ---- Converters: one currency traded for another ----
+  // A handful profit; most cost more than they return. Both kinds still move a
+  // currency nothing above this line touches, so a full ring always needs at
+  // least one of them and usually several. The four right below turn a real
+  // profit, and Frankincense further down does too — mass gets two routes since
+  // nothing else reaches it — and together with them that is the whole of what
+  // mass, charge, and the way back into light and motion have.
   {
     name: 'Hoarfrost',
     description:
@@ -189,30 +157,6 @@ const SEEDS: SeedSpec[] = [
     demands: { heat: 8 },
     yields: { mass: 12 },
     rarity: 'common',
-  },
-  {
-    name: 'Brine',
-    description:
-      'Salt water at the point of saturation, kept in a stoppered jar. Boiled down it gives up the water and leaves the salt behind as coarse dry crystal.',
-    demands: { heat: 6 },
-    yields: { mass: 9 },
-    rarity: 'common',
-  },
-  {
-    name: 'Frankincense',
-    description:
-      'Beads of pale resin from a cut Boswellia trunk, hardened where they ran. Scentless in the hand. Set on a coal it goes almost entirely to a thick white smoke that hangs low and takes a long while to clear.',
-    demands: { heat: 7 },
-    yields: { mass: 10 },
-    rarity: 'uncommon',
-  },
-  {
-    name: 'Cinnabar',
-    description:
-      'Mercury ore, ground fine to the vermilion that manuscript painters kept for important words. Roasted hard enough it gives up the metal as a vapour, which comes off bright and settles heavy.',
-    demands: { heat: 8 },
-    yields: { mass: 8, light: 4 },
-    rarity: 'rare',
   },
   {
     name: 'Lodestone',
@@ -223,27 +167,11 @@ const SEEDS: SeedSpec[] = [
     rarity: 'uncommon',
   },
   {
-    name: 'Tourmaline',
+    name: 'Foxfire',
     description:
-      'A stubby green crystal, striated down its length. Warmed in the ash it takes a charge along its axis, drawing ash to one end and pushing it off the other, and it holds that charge until it cools again.',
-    demands: { heat: 7 },
-    yields: { charge: 10 },
-    rarity: 'uncommon',
-  },
-  {
-    name: 'Amber',
-    description:
-      'Fossil tree resin, warm to the hand and near enough as light as wood. Rubbed hard on wool it takes a charge that will lift hair and dust off a bench, and in a dark room the discharge cracks and shows a thread of light.',
-    demands: { motion: 7 },
-    yields: { charge: 10 },
-    rarity: 'uncommon',
-  },
-  {
-    name: 'Voltaic Pile',
-    description:
-      'Discs of zinc and silver stacked in alternation, each pair divided by cloth soaked in brine. The stack gives a steady current with nothing moving in it at all, and goes on giving until the zinc discs are eaten through.',
+      'Rotting oak shot through with honey fungus, kept damp in a covered box. The fungus digests the wood and gives off a cold green light while it does, steady enough to read a dial by and with no warmth in it at all. It works through a fair weight of timber a night.',
     demands: { mass: 7 },
-    yields: { charge: 10 },
+    yields: { light: 8 },
     rarity: 'rare',
   },
   {
@@ -251,15 +179,111 @@ const SEEDS: SeedSpec[] = [
     description:
       'Grown out of the cooling melt in stepped square terraces, with an oxide film running pink and gold across the faces. It is repelled by a magnet of either pole, and a small enough crystal will drift away from one across a smooth table.',
     demands: { charge: 8 },
-    yields: { motion: 12 },
+    yields: { motion: 10 },
     rarity: 'uncommon',
+  },
+  {
+    name: 'Clock Spring',
+    description:
+      'A flat steel ribbon wound tight against a sealed brass bellows. Warmth swells the bellows, which takes up the winding a notch at a time and holds it there, but a bellows this size only ever takes up a little before it is fighting its own spring back.',
+    demands: { heat: 5 },
+    yields: { motion: 4 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Black Powder',
+    description:
+      'Saltpetre, charcoal and sulphur, milled damp together and corned into hard grains. The grains want a real flame rather than a stray spark, and most of what they hold goes to the crack and the smoke rather than to anything that could be called work.',
+    demands: { heat: 7 },
+    yields: { motion: 6 },
+    rarity: 'common',
+  },
+  {
+    name: 'White Phosphorus',
+    description:
+      'Kept under water, cut under water, and handled wet. Left dry it takes fire from the air itself within a minute, without anything touching it. Most of what it is goes up as smoke; what is left is a hard white light and a heat that sticks to whatever it has landed on.',
+    demands: { mass: 6 },
+    yields: { light: 3, heat: 3 },
+    rarity: 'rare',
+  },
+  {
+    name: 'Jet',
+    description:
+      'Fossilised wood, black and polished, light enough to float in brine and soft enough to carve with a knife. It takes a flame readily for a mineral, but most of the coal it wants goes into keeping itself lit rather than into the small bright flame it shows.',
+    demands: { heat: 6 },
+    yields: { light: 5 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Lampblack',
+    description:
+      'Soot collected off a smoking wick and packed into a cake. It is the blackest substance to be had, reflecting almost nothing that falls on it, but a cake this small only ever gives back a fraction of the light it swallowed, as heat.',
+    demands: { light: 7 },
+    yields: { heat: 6 },
+    rarity: 'common',
+  },
+  {
+    name: 'Quicklime',
+    description:
+      'Burnt limestone, kept sealed because it draws damp straight out of the air. Given water outright it slakes and comes to the boil with no flame under it, but most of what it takes goes into cracking its own vessel rather than into the warmth it gives off.',
+    demands: { mass: 7 },
+    yields: { heat: 6 },
+    rarity: 'common',
+  },
+  {
+    name: 'Brine',
+    description:
+      'Salt water at the point of saturation, kept in a stoppered jar. Boiled down it gives up the water and leaves the salt behind as coarse dry crystal, but most of the heat under the pan goes into the steam rather than the salt.',
+    demands: { heat: 6 },
+    yields: { mass: 5 },
+    rarity: 'common',
+  },
+  {
+    name: 'Frankincense',
+    description:
+      'Beads of pale resin from a cut Boswellia trunk, hardened where they ran. Scentless in the hand. Set on a coal it goes almost entirely to a thick white smoke that hangs low and takes a long while to clear, most of it condensing back to a resin heavier than what fed the coal.',
+    demands: { heat: 7 },
+    yields: { mass: 9 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Cinnabar',
+    description:
+      'Mercury ore, ground fine to the vermilion that manuscript painters kept for important words. Roasted hard enough it gives up the metal as a vapour, which comes off bright and settles heavy, but most of the roasting heat goes into the air around it.',
+    demands: { heat: 8 },
+    yields: { mass: 5, light: 2 },
+    rarity: 'rare',
+  },
+  {
+    name: 'Tourmaline',
+    description:
+      'A stubby green crystal, striated down its length. Warmed in the ash it takes a charge along its axis, drawing ash to one end and pushing it off the other, but only a fraction of the warmth put into it survives as the charge it holds.',
+    demands: { heat: 7 },
+    yields: { charge: 6 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Amber',
+    description:
+      'Fossil tree resin, warm to the hand and near enough as light as wood. Rubbed hard on wool it takes a charge that will lift hair and dust off a bench, but most of the rubbing is lost to the warmth of the hand rather than kept as the charge.',
+    demands: { motion: 7 },
+    yields: { charge: 6 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Voltaic Pile',
+    description:
+      'Discs of zinc and silver stacked in alternation, each pair divided by cloth soaked in brine. The stack gives a steady current with nothing moving in it at all, but the zinc it eats through carries far more than the current it hands back.',
+    demands: { mass: 7 },
+    yields: { charge: 5 },
+    rarity: 'rare',
   },
   {
     name: 'Fulgurite',
     description:
-      'A brittle glass tube, rough on the outside and smooth within, formed where lightning struck wet sand and fused a channel through it. Current run through it again brings back a little of what made it: a flash along the bore, and heat enough to crack the glass.',
+      'A brittle glass tube, rough on the outside and smooth within, formed where lightning struck wet sand and fused a channel through it. Current run through it again brings back a little of what made it: a flash along the bore, and a fraction of the heat it took to fuse the glass in the first place.',
     demands: { charge: 8 },
-    yields: { heat: 7, light: 5 },
+    yields: { heat: 5, light: 2 },
     rarity: 'rare',
   },
 

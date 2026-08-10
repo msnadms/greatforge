@@ -112,7 +112,7 @@ export function ComponentSlot({
           </span>
         )
       ) : null}
-      {starved && (
+      {starved && !readOnly && (
         <span className="slot__toll" title={starvation}>
           −{ledgerTotal(shortfall)}
         </span>

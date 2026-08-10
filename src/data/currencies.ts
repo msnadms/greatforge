@@ -116,7 +116,7 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'The current runs one way',
-    body: 'Clockwise, and each crossing is charged against the current as a whole, one currency or five: two units through a gap, one through an ordinary reagent, none through a relay, wherever it stands. A relay is a reagent whose two columns read alike to the unit; one unit either way and it is something else, costing the ordinary unit. The price is billed to the currency the next slot demanded and the remainder to the oldest in flight, so a supply pays its own way to the reagent waiting on it. A form may waive these prices or double them; see the seventh law.',
+    body: 'Clockwise, and each crossing is charged against the current as a whole, one currency or five: two units through a gap, one through an ordinary reagent, none through a relay, wherever it stands. A relay is a reagent whose two columns read alike to the unit; one unit either way and it is something else, costing the ordinary unit. The price is billed to the currency the next slot demanded first, so a supply pays its own way to the reagent waiting on it, and whatever is left is shared across everything else still in flight in proportion to what it carries, its unrounded share banked and carried to the next crossing rather than forgiven. A form may waive these prices or double them; see the seventh law.',
   },
   {
     title: 'The circle is walked once, then closed',
@@ -194,7 +194,7 @@ export const ROLE_HINT: Record<Role, string> = {
     'Demands nothing, so it can open a circle at slot I and can never charge a toll. There are only three — a spark, a weight, a lens — and nothing sources charge or mass at all; those have to be made out of something the ring is already carrying.',
   fuel: 'Gives back more than it asks and gives up nothing to do it — it was carrying the difference already. Most give back far more.',
   converter:
-    'Trades one currency for another and hands back a little more than it took. The profit is small next to a fuel, but conversion is the only route into charge and mass, so a ring that wants either is built around these.',
+    'Trades one currency for another. A few hand back more than they took; most cost more than they return. Conversion is the only route into charge and mass and the only way back into light or motion from anything else, so a ring that wants any of those has to know which converters are worth the slot.',
   relay:
     'Gives back exactly what it asks for, unit for unit and currency for currency, so it adds nothing of its own — change either column by one and it is no longer a relay. What it gives instead is the crossing: the current passes through it for nothing, wherever it stands, so a reagent reached across a relay keeps a unit that any other slot would have taken. It is asked and billed like any other reagent, so an underfed relay costs the caster the difference — it buys distance, not slack.',
   sink:

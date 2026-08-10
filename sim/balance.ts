@@ -444,6 +444,69 @@ function isolatedRelaysMustCost(): void {
   )
 }
 
+/**
+ * A player who never looks further back than the slot immediately before the
+ * one they are filling — reading its whole yield ledger, aware of the flat
+ * transit tax, and always taking the strongest reagent that still fits — used to
+ * complete a toll-free eight-reagent ring on every single attempt, at output
+ * matching the deliberate `fedRing` search above. That is not a trade carelessness
+ * should be able to reach for free, and it is why the catalog was retuned in
+ * August 2026 to thin the free reagents and put most conversions underwater; see
+ * the note at the top of `seedComponents.ts`.
+ *
+ * This is a permanent regression check on that retune: the naive builder's
+ * toll-free rate must stay well under what a shrug and a glance at the last slot
+ * used to buy.
+ */
+function naiveChainRing(reagents: number): Placement[] {
+  const source = pick(SOURCES)
+  const placements: Placement[] = [{ slotIndex: 0, component: source }]
+  const pool = [...NON_SOURCES]
+  let available: Ledger = source.yields
+
+  for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
+    const candidates = pool.filter(
+      (c) =>
+        ledgerTotal(c.demands) > 0 &&
+        ledgerEntries(c.demands).every(([currency, amount]) => (available[currency] ?? 0) - 1 >= amount),
+    )
+    let chosen: MaterialComponent | undefined
+    if (candidates.length > 0) {
+      chosen = candidates.reduce((best, c) => (ledgerTotal(c.yields) > ledgerTotal(best.yields) ? c : best))
+    } else if (pool.length > 0) {
+      chosen = pool.reduce((best, c) => (ledgerTotal(c.demands) < ledgerTotal(best.demands) ? c : best))
+    }
+    if (!chosen) break
+    placements.push({ slotIndex, component: chosen })
+    pool.splice(pool.indexOf(chosen), 1)
+    available = chosen.yields
+  }
+  return placements
+}
+
+function naiveChainProbe(): void {
+  const TRIALS = 8000
+  let clean = 0
+  let manifestation = 0
+  let toll = 0
+  state = 0x0a1e1e
+  for (let i = 0; i < TRIALS; i++) {
+    const ring = naiveChainRing(RING_SLOT_COUNT)
+    const r = computeReaction(ring, PLAIN)
+    manifestation += r.manifestationTotal
+    toll += r.tollTotal
+    if (r.tollTotal === 0) clean++
+  }
+  const cleanRate = clean / TRIALS
+  console.log('\n=== naive one-hop chain (read only the previous slot, take the best fit) ===')
+  console.log(`average manifestation ${(manifestation / TRIALS).toFixed(1)}`)
+  console.log(`average toll          ${(toll / TRIALS).toFixed(1)}`)
+  console.log(
+    `toll-free rate        ${Math.round(cleanRate * 100)}%  ` +
+      `${cleanRate < 0.5 ? 'OK' : 'TOO EASY: naive one-hop chaining is still reliably free'}`,
+  )
+}
+
 // -------------------------------------------------------------------- forms
 
 /**
@@ -704,6 +767,7 @@ function transitPayerProbe(): void {
 relayProbe()
 transitPayerProbe()
 isolatedRelaysMustCost()
+naiveChainProbe()
 formReport()
 formsOnTheirOwnGround()
 

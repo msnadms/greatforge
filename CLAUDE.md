@@ -65,6 +65,8 @@ Five rules that look arbitrary and are not — each was derived, and reverting o
 - **The crossing is charged to the current the destination demanded, and only what that cannot cover falls on the oldest in flight.** A leap over a hole is billed to the slot it is aimed at (`destinationOf`), not to the hole, so three crossings over two holes are paid by the one reagent waiting at the end of them. Billing the oldest outright — the rule until this change — made an arc's loss depend on a reagent with nothing to do with it: a source at slot I is the oldest current for the whole lap, so it absorbed every crossing until it was spent and everything downstream travelled free. A ring of weight I / fulgurite III / black powder VI delivered 7 heat across two holes and a reagent, where the same ring without the source delivered 2. That is unreadable on the circle — the arc says 7 and the five units are bled elsewhere, under another currency.
 
   **The fallback is not optional.** Without it a crossing whose destination demands nothing in flight costs nothing, which frees gaps entirely (the relay probe goes to 10 vs 9) and lets a lone source ride the whole ring untouched — the same bug from the other end. With it the cost is never waived, only reassigned, which is why the change is nearly balance-neutral: manifestation moved 42.8 → 43.5 at eight reagents, bled is unchanged at 6.5, the fed cohort is unchanged, and every currency stays in band. `transitPayerProbe` asserts both halves.
+
+  **The remainder used to fall to the oldest parcel outright; it now spreads across everything still in flight, in proportion to what each parcel carries, with the unrounded remainder banked as debt rather than dropped.** Oldest-first paid the same defect one step further down: a run of holes with nothing demanded ahead of them drained whichever parcel had been released first to zero before touching any other, so an arc's survival still turned on release order rather than on the crossing itself. A litany of weight I, amber II, fulgurite IV, slow match V used to cross three open slots and the closing lap on Fulgurite's spent heat and light alone, so Slow Match's own heat — released last — reached the mouth as 9, untouched, though nothing about the slot demanded that outcome. A flat proportional split without memory traded one bias for another: a crossing's toll is one or two units split across every parcel in flight, so any one parcel's exact share is usually under a unit and rounds to nothing, which taxes whichever parcel is currently largest every single time and lets every smaller one ride free indefinitely — the same reagent that had been shielded before was now shielded for the opposite reason. `Parcel.debt` fixes that: a parcel's unrounded share is added to what it already owed, and only once the running total clears a whole unit is it actually taken, so a small parcel still pays once enough crossings have accumulated its due, and a large one is not singled out simply for being the only one big enough to round up on its own. Under debt, that same litany delivers heat 8 / motion 1 / light 3 rather than heat 9 / motion 2 / light 3 — the leftover motion finally gets billed instead of dodging every crossing. Both changes together are nearly balance-neutral: manifestation moves 43.5 → 43.4 at eight reagents, bled is unchanged, and every currency still reaches the mouth, in a band that widens slightly to 15–25%. `crossInto` names the two passes for this: `spend` for the destination's own demand, `spendProportional` for what is left.
 - **A relay is an ordinary reagent but for one thing: the current crosses it for nothing, wherever it stands.** That one line in `baseTransitCost` is the entire role, and it is the only place in `computeReaction` that asks what a component is. Everything else about a relay is resolved exactly like any other reagent — it is asked for its demands, billed in full for what the ring could not give it, releases its whole yield, and closes its slot.
 
   The free crossing is unconditional, holes on both sides included. A source at slot II and a relay at slot IV with a gap between them costs 2, where an ordinary reagent at slot IV costs 3: the hole is charged as the hole, and the relay adds nothing on top. `relayProbe` in the harness asserts exactly that pair of numbers using two synthetic reagents with identical demands, one a relay and one a converter, so it cannot drift with the catalog.
@@ -81,7 +83,9 @@ Five rules that look arbitrary and are not — each was derived, and reverting o
 
 **Unmet demand is the only thing the caster is ever charged for.** There is no per-casting cost on top of it (`SPEAKING_TOLL`/`BEND_TOLL` is gone), so a ring that feeds every reagent standing in it is free to speak however large it is — 100% of fully fed rings cost zero, under every form. A measuring form charges nothing at all, ever, because it takes the difference out of the yield instead. Law 6 says both halves in as many words; anything new that bills the body means editing law 6 in the same change.
 
-The catalog in `data/seedComponents.ts` is tuned against these numbers: every currency circulates in a 4–9 band. It stocks two sinks (Lampblack, Glauber's Salt), added with the forms — the dirge is spared the spill only while a sink stands in the ring, and the role had deliberately shipped empty until then. A lap now costs 8 units in total rather than 8 of *each* currency, so the pressure on small flows is far lighter than the band was originally chosen against — the band is currently more generous than it needs to be rather than too tight. Retuning a seed's ledgers without re-checking the frontier is still how a currency goes dead.
+The catalog in `data/seedComponents.ts` is tuned against these numbers: every currency circulates in a 4–9 band. It stocks two sinks (Lampblack, Glauber's Salt), added with the forms — the dirge is spared the spill only while a sink stands in the ring, and the role had deliberately shipped empty until then. Retuning a seed's ledgers without re-checking the frontier is still how a currency goes dead.
+
+**August 2026: only seven reagents in the whole catalog — three sources, four fuels — never cost anything to place, and that is one short of a full ring.** Before this every fuel and converter handed back more than it took, so an eight-reagent working could be built by reading only the slot immediately behind the one being filled and grabbing anything that fit its colour: `sim/balance.ts`'s `naiveChainProbe` found that heuristic reached a toll-free ring on every single attempt, at output matching the deliberate `fedRing` search elsewhere in the harness. Carelessness was not a worse strategy, just a faster one. The fix was not to bill a fully fed ring — law 6 still means a ring that feeds everything standing in it speaks for free — but to make that state harder to fall into by accident: fuels were cut from seven to four, and most of what used to stand under "Converters" now costs more than it returns. A full ring is left needing at least one converter and usually several, and only five of them (four listed with the converters, plus Frankincense, repriced back into profit to give mass a second route) are worth the slot. `naiveChainProbe` is a permanent regression check on this — its toll-free rate must stay well under what a shrug used to buy — and it is why the numbers below read lower than they used to: a lap still costs 8 units in total rather than 8 of *each* currency, but the catalog can no longer be threaded on autopilot to outrun that cost.
 
 ### Spell forms are behavioural
 
@@ -125,21 +129,22 @@ Forms have now been through three arrangements: seven separate resolver knobs (`
 
 | reagents | manifestation | toll | bled | dead rings |
 | --- | --- | --- | --- | --- |
-| 2 | 2.2 | 12.5 | 15.9 | 11% |
-| 4 | 11.1 | 20.4 | 20.6 | 0% |
-| 6 | 25.1 | 24.7 | 16.7 | 0% |
-| 8 | 43.5 | 27.2 | 6.5 | 0% |
+| 2 | 1.3 | 12.8 | 12.7 | 28% |
+| 4 | 7.6 | 22.0 | 17.0 | 1% |
+| 6 | 17.6 | 27.8 | 14.2 | 0% |
+| 8 | 30.4 | 31.6 | 6.4 | 0% |
 
-These are a little below the pre-forms table (which read 2.3 / 11.8 / 26.9 / 47.1) for one reason only: the catalog gained two sinks, so a random ring now sometimes contains something that swallows. The resolver under a prayer is otherwise byte-identical, and was verified so before the sinks were added.
+These read lower across the board than the pre-August-2026 table (2.2 / 11.0 / 25.0 / 43.4), and two reagents now goes dead nearly three times as often (11% → 28%): thinning the free reagents and pricing most conversions underwater (see above) shrank the whole catalog's output, not only the one-hop shortcut it targeted. The resolver under a prayer is otherwise byte-identical.
 
-Four things to look at when the numbers move:
+Five things to look at when the numbers move:
 
 - **Output is superlinear in reagents** — a full ring beats two half rings, which is what makes slot order a craft rather than a chore.
-- **A fully fed eight-reagent ring makes 28.6 and pays 0, against a random one's 43.5 and 27.2.** That is the whole trade the game is about, and it must stay a trade: raw output is bought with the caster's body, and the deliberate ring gives up most of the output to pay nothing. If fed rings ever start winning on output too, the tuning has collapsed.
-- **Every currency stays between 16% and 24% of everything delivered.** A currency drifting toward zero means a seed's ledgers were retuned without re-checking the frontier.
+- **A fully fed eight-reagent ring makes 18.8 and pays 0, against a random one's 30.4 and 31.6.** Random no longer clearly outscores fed on raw output either — the toll now runs slightly ahead of it — which is the point of the August 2026 retune: a careless ring used to win outright and only paid for winning, and now it is a wash at best. The trade is still the same shape — a fed ring gives up output for a toll of exactly zero — but carelessness is no longer the higher-expectation play. If fed rings start winning on output outright, the tuning has collapsed the other way.
+- **Every currency stays between 15% and 25% of everything delivered.** A currency drifting toward zero means a seed's ledgers were retuned without re-checking the frontier.
+- **`naiveChainProbe`'s toll-free rate must stay well under 50%.** It is the harness's model of a player who never looks further back than the slot immediately before the one they are filling; before the August 2026 retune it printed 100% at a manifestation matching `fedRing`'s own deliberate search, which meant reading only the last card placed was a complete strategy. It now prints 0%.
 - **The two relay checks and the transit payer, all hard assertions rather than readings to interpret.** `the relay crossing` must print `OK`: 8 units reach a relay across a gap against 7 for an ordinary reagent, so the relay is free and the hole still costs its two. It is pinned to the prayer, since a form sparing the transit makes relay and reagent cost the same — correct behaviour, useless as a probe. `padding a sparse ring with two isolated relays` must print `0/4000 OK`, meaning no ring lets a starved relay raise the manifestation without paying for it. `the transit payer` must print `OK` twice: a chain fed across two holes receives the same whether or not an unrelated source stands at slot I, and a lone source still loses its whole yield to the lap.
 
-Note that bled *falls* as the ring fills (20.6 at four reagents, 6.5 at eight) even though a fuller ring is a longer walk. That is the completion spill in law 4, not transit: a four-reagent ring throws away half of what it still holds at the mouth. Transit itself is at most 8 units a lap under a prayer.
+Note that bled *falls* as the ring fills (17.0 at four reagents, 6.4 at eight) even though a fuller ring is a longer walk. That is the completion spill in law 4, not transit: a four-reagent ring throws away half of what it still holds at the mouth. Transit itself is at most 8 units a lap under a prayer.
 
 **The forms** get three more checks, and two hard assertions:
 
@@ -149,12 +154,12 @@ Note that bled *falls* as the ring fills (20.6 at four reagents, 6.5 at eight) e
 
 | form | fed: own | fed: prayer | careless: own | careless: prayer |
 | --- | --- | --- | --- | --- |
-| litany | 14.3 | 7.4 | 21.4 | 11.0 |
-| dirge | 16.2 | 15.2 | 1.5 | 21.2 |
-| invocation | 35.6 | 28.4 | 49.9 | 45.3 |
-| ward | 22.3 | 15.6 | 3.4 | 23.7 |
-| benediction | 5.4 | 1.8 | 0.2 | 2.2 |
-| elegy | cannot be fed | — | 14.5 | 7.2 |
+| litany | 11.6 | 6.0 | 14.6 | 7.5 |
+| dirge | 9.3 | 8.8 | 1.2 | 14.8 |
+| invocation | 26.2 | 18.9 | 36.0 | 31.9 |
+| ward | 17.9 | 11.1 | 2.8 | 16.4 |
+| benediction | 5.2 | 1.7 | 0.2 | 1.4 |
+| elegy | cannot be fed | — | 9.3 | 4.8 |
 
   **The fed cohort is the one to tune against.** On a fed ring a measuring form and a prayer resolve identically, so whatever separates them there is the condition alone — and every form beats the prayer on ground it chose. The careless cohort is the same rings thrown together, where the average slot gets 38% of what it asked; a prayer's output there is almost entirely reagents firing on credit, which is exactly what its toll of 20-odd is buying, so the measuring forms reading 1.5 and 3.4 is the credit rule showing up and not a broken form. **An elegy can never be fed** — it forbids a source anywhere, so the first reagent the current reaches must starve. It always pays something, by construction, and the harness says so rather than reporting a failure.
 

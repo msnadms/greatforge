@@ -88,6 +88,16 @@ interface Parcel {
   /** Slot that released it, for attributing transfers. */
   from: number
   amount: number
+  /**
+   * Fractional share of the proportional fallback (see `spendProportional`) that
+   * this parcel owed on some past crossing but wasn't actually charged, because
+   * the toll is whole units and this parcel's exact share of it rounded below
+   * one. Carried forward rather than discarded, so a parcel too small to ever
+   * clear a single crossing's rounding on its own still pays its share once
+   * enough small crossings have accumulated — the same reason a small balance
+   * left off a bill one month is still owed the next.
+   */
+  debt: number
 }
 
 function emptyReaction(form: SpellForm): Reaction {
@@ -125,8 +135,8 @@ function emptyReaction(form: SpellForm): Reaction {
  *    units in total, not per currency and not per parcel, so the price of a lap is
  *    the length of the walk and the number of holes in it, and never the number of
  *    currencies the ring happens to be carrying. It is charged to the current the
- *    slot ahead asked for, and only what that cannot cover falls on the oldest
- *    current in flight.
+ *    slot ahead asked for, and only what that cannot cover is spread across
+ *    everything else still in flight, in proportion to what each parcel carries.
  *  - Under a crediting form a slot releases its whole yield whether or not the ring
  *    met its demands, and the difference comes out of the caster. Under a measuring
  *    form it releases the share of that yield the ring fed it, and nothing is
@@ -243,11 +253,30 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
    * a bug in the app, because on the circle it is one — the arc says 7 and the five
    * units are bled somewhere else, under another currency.
    *
-   * **What the destination did not ask for pays the remainder, oldest first.** The
-   * cost is never waived, only reassigned: a slot whose demand is not in flight,
-   * and a source that demands nothing at all, still cost what they cost. Without
-   * that fallback a lone source rides the whole ring untouched, which is the same
-   * bug from the other side.
+   * **What the destination did not ask for pays the remainder, spread across
+   * everything else still in flight.** The cost is never waived, only reassigned: a
+   * slot whose demand is not in flight, and a source that demands nothing at all,
+   * still cost what they cost. Without that fallback a lone source rides the whole
+   * ring untouched, which is the same bug the destination-first rule above fixed,
+   * from the other side.
+   *
+   * The fallback is proportional, not oldest-first. Oldest-first has the same
+   * defect the destination-first rule exists to avoid: whichever parcel happens to
+   * have been released earliest absorbs a crossing in full before a newer parcel
+   * loses anything, so an arc's survival turns on release order rather than on
+   * anything a player set on the circle. Charging every parcel still in flight the
+   * same share keeps the loss a fact about the crossing, not about when the current
+   * it hits happened to arrive.
+   *
+   * A single crossing's toll is one or two units, split across however many
+   * parcels are in flight, so a parcel's exact share of it is usually well under
+   * one unit and rounds to nothing — a flat proportional split with no memory
+   * would tax whichever parcel is currently largest, every crossing, and let
+   * every smaller one ride free indefinitely. `Parcel.debt` is that memory: each
+   * crossing a parcel's share is added to what it already owed, and only once the
+   * running total clears a whole unit is it actually taken. A small parcel still
+   * pays, once enough crossings have accumulated its due; a large one is not
+   * singled out simply for being the only one big enough to round up.
    */
   function crossInto(slotIndex: number): void {
     let remaining = baseTransitCost(slotIndex)
@@ -255,8 +284,8 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
 
     const wanted = demandsBySlot.get(destinationOf(slotIndex))
 
-    // Two passes over the same parcels, oldest first within each: what the
-    // destination demands, then everything else for whatever is left unpaid.
+    // What the destination demands, oldest first: a chain pays its own way before
+    // anything unrelated is touched.
     const spend = (payable: (currency: Currency) => boolean): void => {
       for (let i = 0; i < parcels.length && remaining > 0; i++) {
         const parcel = parcels[i]
@@ -268,8 +297,63 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
       }
     }
 
+    // What is left unpaid, spread across every parcel still in flight in
+    // proportion to what it is carrying, with each parcel's unrounded share
+    // banked as debt rather than dropped. What is actually taken this crossing
+    // has to total exactly `spend` — the toll is a flat, stated cost, never more
+    // and never less — so a debt that has piled up past what this crossing can
+    // collect waits for the next one, and a crossing that comes up short of
+    // parcels whose debt has already matured defers the least-overdue among them.
+    const spendProportional = (): void => {
+      if (remaining <= 0) return
+      const total = parcels.reduce((sum, parcel) => sum + parcel.amount, 0)
+      if (total <= 0) return
+      const spend = Math.min(remaining, total)
+
+      const entries = parcels.map((parcel) => {
+        const owed = parcel.debt + (parcel.amount * spend) / total
+        const due = Math.max(0, Math.min(parcel.amount, Math.floor(owed)))
+        return { parcel, owed, due }
+      })
+
+      let outstanding = spend - entries.reduce((sum, entry) => sum + entry.due, 0)
+
+      // More is due this crossing than its toll covers: raise the most overdue
+      // parcels first, one unit at a time, until the toll is exactly matched.
+      while (outstanding > 0) {
+        let next: (typeof entries)[number] | undefined
+        for (const entry of entries) {
+          if (entry.due >= entry.parcel.amount) continue
+          if (!next || entry.owed - entry.due > next.owed - next.due) next = entry
+        }
+        if (!next) break
+        next.due++
+        outstanding--
+      }
+
+      // Debt matured on more parcels than the toll can pay out this crossing:
+      // defer whichever are least overdue, and their debt simply carries on.
+      while (outstanding < 0) {
+        let next: (typeof entries)[number] | undefined
+        for (const entry of entries) {
+          if (entry.due <= 0) continue
+          if (!next || entry.owed - entry.due < next.owed - next.due) next = entry
+        }
+        if (!next) break
+        next.due--
+        outstanding++
+      }
+
+      for (const entry of entries) {
+        entry.parcel.amount -= entry.due
+        entry.parcel.debt = entry.owed - entry.due
+        if (entry.due > 0) addToLedger(bled, entry.parcel.currency, entry.due)
+      }
+      remaining -= spend
+    }
+
     spend((currency) => (wanted?.[currency] ?? 0) > 0)
-    spend(() => true)
+    spendProportional()
 
     dropSpentParcels()
   }
@@ -330,7 +414,7 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     for (const [currency, amount] of ledgerEntries(yields)) {
       if (amount <= 0) continue
       addToLedger(report.released, currency, amount)
-      parcels.push({ currency, from: report.slotIndex, amount })
+      parcels.push({ currency, from: report.slotIndex, amount, debt: 0 })
     }
   }
 

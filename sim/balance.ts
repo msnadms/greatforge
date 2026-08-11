@@ -2,29 +2,28 @@
  * Throwaway balance harness. Compiled out to the scratchpad and run under node;
  * not part of the app. See CLAUDE.md "Balance".
  *
- * Two things to check, and they are separable. The circle itself: that law 1 holds
- * on every ring, that the ring shape still matters, and that every currency in the
- * catalog still reaches the mouth. And the forms, which are resolver inputs again:
- * that each of the seven is worth choosing somewhere, that the three measuring
- * forms never charge the body, and that no condition is either free to satisfy or
- * impossible to.
- *
- * Everything measuring the circle runs under PLAIN, the prayer, which is the one
- * form that asks nothing and spares nothing. Those numbers are directly comparable
- * with the table in CLAUDE.md from before forms became behavioural, and they must
- * stay so: a change that moves the prayer has moved the circle, not the forms.
+ * Checks two separable things: the circle (law 1, ring shape, every currency
+ * reaching the mouth) and the forms (each worth choosing somewhere, measuring
+ * forms never charge, no condition free or impossible). Circle measurements run
+ * under PLAIN, the prayer, so they stay comparable across form changes.
  */
 import { buildSeedComponents } from '../src/data/seedComponents'
-import { computeReaction } from '../src/lib/reaction'
+import { buildConditionContext, computeReaction } from '../src/lib/reaction'
 import { CURRENCY_META, describeRole } from '../src/data/currencies'
 import { FORM_META, conditionRelief } from '../src/data/spellForms'
 import {
+  CASTER_LEVELS,
   CURRENCIES,
+  LEVEL_POWER,
+  MAX_LEDGER_ENTRY,
   RING_SLOT_COUNT,
   SPELL_FORMS,
+  TRANSIT_LOSS_GAP,
+  TRANSIT_LOSS_REAGENT,
   ledgerAmount,
   ledgerEntries,
   ledgerTotal,
+  type CasterLevel,
   type Currency,
   type Ledger,
   type MaterialComponent,
@@ -38,35 +37,20 @@ const PLAIN: SpellForm = 'prayer'
 let seq = 0
 
 /**
- * `rare` and `singular` reagents are exceptional by design (see the note at the
- * top of `seedComponents.ts`) rather than part of the tuned envelope: they are
- * priced for how hard they are to come by, not for how often a ring should see
- * them, and a `singular` reagent by definition exists once in the whole catalog.
- * Every table and probe below is a statement about the catalog any player
- * starts with, so it is measured on `common`/`uncommon` only. A careless player
- * who happens to be carrying a `singular` reagent *should* thread a free ring
- * more easily than this harness allows for; that is the reward, not a balance
- * defect, and it is exactly what `naiveChainProbe` would otherwise be unable to
- * tell apart from the autopilot exploit it exists to catch.
+ * `rare` and `singular` reagents are exceptional by design, not part of the
+ * tuned envelope. Every table and probe below measures the catalog any player
+ * starts with, so only `common`/`uncommon` are included.
  */
 const FULL_CATALOG: MaterialComponent[] = buildSeedComponents(() => `c${seq++}`, 0)
 const CATALOG: MaterialComponent[] = FULL_CATALOG.filter(
   (c) => c.rarity !== 'rare' && c.rarity !== 'singular',
 )
 
-/**
- * The catalog split by the one question the builders ask of it, through the same
- * derived predicate the app labels the tray with. Restating it as
- * `ledgerTotal(demands) === 0` is what let the probes below drift apart from the
- * cohorts they are meant to be comparable with.
- */
+/** The catalog split by role, through the same derived predicate the app labels the tray with. */
 const SOURCES: MaterialComponent[] = CATALOG.filter((c) => describeRole(c) === 'source')
 const NON_SOURCES: MaterialComponent[] = CATALOG.filter((c) => describeRole(c) !== 'source')
 
-/**
- * The source both transit probes are pinned to. One reagent, so the two hard
- * assertions cannot start probing with different ones when the catalog is retuned.
- */
+/** The source both transit probes are pinned to, so a catalog retune can't point them at different reagents. */
 const MOTION_SOURCE = SOURCES.find((c) => ledgerAmount(c.yields, 'motion') >= 10)
 
 // Deterministic PRNG so runs are comparable between tunings.
@@ -79,12 +63,7 @@ function pick<T>(items: T[]): T {
   return items[Math.floor(rand() * items.length)]
 }
 
-/**
- * Fisher-Yates, returning a new array. `sort(() => rand() - 0.5)` is not a
- * shuffle — the comparator is inconsistent, so the result is biased toward the
- * input order by an amount that depends on the sort implementation. A harness
- * whose "random" rings lean on catalog order is measuring the catalog order.
- */
+/** Fisher-Yates, returning a new array. `sort(() => rand() - 0.5)` is not a shuffle — it biases toward input order. */
 function shuffled<T>(items: T[]): T[] {
   const next = [...items]
   for (let i = next.length - 1; i > 0; i--) {
@@ -100,9 +79,16 @@ function randomRing(reagents: number): Placement[] {
     .sort((a, b) => a - b)
   const pool = [...CATALOG]
   const placements: Placement[] = []
+  let hasSource = false
   for (const slotIndex of chosen) {
-    const idx = Math.floor(rand() * pool.length)
-    placements.push({ slotIndex, component: pool.splice(idx, 1)[0] })
+    // A ring holds at most one source (law 5); once one is drawn, sources are
+    // excluded from the remaining slots.
+    const candidates = hasSource ? pool.filter((c) => describeRole(c) !== 'source') : pool
+    const idx = Math.floor(rand() * candidates.length)
+    const component = candidates[idx]
+    pool.splice(pool.indexOf(component), 1)
+    if (describeRole(component) === 'source') hasSource = true
+    placements.push({ slotIndex, component })
   }
   return placements
 }
@@ -119,32 +105,50 @@ function builtRing(reagents: number): Placement[] {
 }
 
 /**
+ * How many fresh shuffles `fedRing`/`fedRingIn` retry before giving up.
+ * `growFed` is a one-pass greedy walk with no backtracking, so an unlucky
+ * ordering can dead-end even when a fed ring exists; a retry with a fresh
+ * shuffle almost always finds one.
+ */
+const FED_ATTEMPTS = 30
+
+/**
  * A ring built so that every reagent is actually fed: each slot takes the first
  * candidate that leaves the circle with no shortfall anywhere. This is the ring a
  * competent player builds, and the only bucket in which a toll means a mistake
  * rather than a choice.
  */
-function fedRing(reagents: number): Placement[] {
-  const placements: Placement[] = [{ slotIndex: 0, component: pick(SOURCES) }]
-  const pool = CATALOG.filter((c) => c !== placements[0].component)
-  for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
-    if (!growFed(placements, pool, slotIndex)) break
+function fedRing(reagents: number, level: CasterLevel = 5): Placement[] {
+  let best: Placement[] = []
+  for (let attempt = 0; attempt < FED_ATTEMPTS && best.length < reagents; attempt++) {
+    const placements: Placement[] = [{ slotIndex: 0, component: pick(SOURCES) }]
+    const pool = CATALOG.filter((c) => c !== placements[0].component)
+    for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
+      if (!growFed(placements, pool, slotIndex, level)) break
+    }
+    if (placements.length > best.length) best = placements
   }
-  return placements
+  return best
 }
 
 /**
  * Fills one slot with the first candidate that leaves the ring starving nowhere,
  * spending it out of `pool`. Returns false if the pool holds no such reagent.
- *
- * This is the harness's definition of "fed", and it is here once because three
- * cohorts are built on it. The two builders around it differ only in which slots
- * they walk and what they do when a slot cannot be filled.
+ * This is the harness's definition of "fed"; three cohorts build on it.
  */
-function growFed(placements: Placement[], pool: MaterialComponent[], slotIndex: number): boolean {
-  for (const candidate of shuffled(pool)) {
+function growFed(
+  placements: Placement[],
+  pool: MaterialComponent[],
+  slotIndex: number,
+  level: CasterLevel = 5,
+): boolean {
+  // A source never starves the ring, so once one is placed the rest are
+  // excluded (law 5 allows only one).
+  const hasSource = placements.some((p) => describeRole(p.component) === 'source')
+  const candidates = hasSource ? pool.filter((c) => describeRole(c) !== 'source') : pool
+  for (const candidate of shuffled(candidates)) {
     const trial = [...placements, { slotIndex, component: candidate }]
-    const r = computeReaction(trial, PLAIN)
+    const r = computeReaction(trial, PLAIN, level)
     if (r.slots.every((slot) => ledgerEntries(slot.shortfall).length === 0)) {
       placements.push({ slotIndex, component: candidate })
       pool.splice(pool.indexOf(candidate), 1)
@@ -156,24 +160,25 @@ function growFed(placements: Placement[], pool: MaterialComponent[], slotIndex: 
 
 /**
  * A fed ring in a *given* set of slots, or `[]` if the catalog cannot fill them
- * without starving something.
+ * without starving something. `fedRing` above only lays reagents contiguously
+ * from slot I; this lets a condition ask for an arbitrary shape.
  *
- * `fedRing` above always lays its reagents contiguously from slot I, which is how a
- * player builds but is only one shape. Three of the six conditions ask for a shape
- * it can never produce — two pairs with a hole between them, or slot VIII filled
- * with the middle open — so measuring those forms against a contiguous builder
- * reports them unreachable when they are merely unbuilt.
- *
- * Slots must arrive in ascending order: the check is incremental, and it is only
- * valid because adding a later slot cannot retroactively starve an earlier one.
+ * Slots must arrive in ascending order — the check is incremental.
  */
 function fedRingIn(slots: number[]): Placement[] {
-  const placements: Placement[] = []
-  const pool = [...CATALOG]
-  for (const slotIndex of slots) {
-    if (!growFed(placements, pool, slotIndex)) return []
+  for (let attempt = 0; attempt < FED_ATTEMPTS; attempt++) {
+    const placements: Placement[] = []
+    const pool = [...CATALOG]
+    let ok = true
+    for (const slotIndex of slots) {
+      if (!growFed(placements, pool, slotIndex)) {
+        ok = false
+        break
+      }
+    }
+    if (ok) return placements
   }
-  return placements
+  return []
 }
 
 interface Row {
@@ -190,18 +195,11 @@ interface Row {
   met: boolean | null
 }
 
-function resolve(ring: Placement[], form: SpellForm = PLAIN): Row {
-  const reaction = computeReaction(ring, form)
+function resolve(ring: Placement[], form: SpellForm = PLAIN, level: CasterLevel = 5): Row {
+  const reaction = computeReaction(ring, form, level)
 
-  // Law 1, checked on every ring and under every form: every unit a reagent
-  // released either was drawn by another slot, bled away, or left at the mouth.
-  // The one law that cannot move, so the harness throws rather than reporting.
-  //
-  // A measured reagent balances here without a special case: it released a cut-down
-  // yield, and `released` is what it actually put into the ring rather than what the
-  // catalog says it carries. A form that let a reagent release a yield it was never
-  // fed would trip this immediately, which is the point — it is the guard rail on
-  // the whole form mechanism.
+  // Law 1: every unit released either was drawn, bled away, or reached the
+  // mouth. Thrown rather than reported, since it can never legitimately fail.
   let released = 0
   let received = 0
   for (const slot of reaction.slots) {
@@ -279,8 +277,7 @@ function record(tally: Tally, key: string, row: Row): void {
   c.bled += row.bled
   c.width += row.width
   if (row.manifestation === 0) c.dead++
-  // Unmet demand is the only thing charged to the caster, so a clean ring is one
-  // that fed every reagent standing in it and cost the body nothing at all.
+  // Unmet demand is the only thing charged, so a clean ring costs nothing.
   if (row.toll === 0) c.clean++
   rings++
   for (const [currency, amount] of Object.entries(row.delivered) as Array<[Currency, number]>) {
@@ -328,9 +325,7 @@ table('random rings', byCount)
 table('source-first rings', builtByCount)
 table('fully fed rings', fedByCount)
 
-// The catalog is tuned so that every currency circulates. A currency that never
-// survives to the mouth is a dead currency, and retuning a seed's ledgers is how
-// one dies.
+// A currency that never reaches the mouth is dead; retuning a seed's ledgers is how one dies.
 console.log(`\n=== delivered by currency over ${rings} rings ===`)
 const deliveredAll = [...deliveredTotals.values()].reduce((a, b) => a + b, 0) || 1
 for (const currency of CURRENCIES) {
@@ -341,11 +336,9 @@ for (const currency of CURRENCIES) {
 }
 
 /**
- * The relay crossing, measured against the arithmetic it is supposed to satisfy.
- * A reagent at slot II and a reagent at slot IV with a hole between them: the current
- * pays 2 for the hole and 1 to enter slot IV, so 3. Put a relay at slot IV instead
- * and it pays the hole and nothing else, so 2. The relay is free wherever it
- * stands, and this is the check that it stays that way.
+ * The relay crossing: a relay must cross for free wherever it stands. Probes
+ * with a source at slot II and an occupant at slot IV across one hole, relay
+ * vs. ordinary reagent, and checks the gap between their costs.
  */
 function relayProbe(): void {
   const source = MOTION_SOURCE
@@ -354,28 +347,26 @@ function relayProbe(): void {
     return
   }
 
-  // Two reagents that demand exactly the same thing and differ only in role: giving
-  // back what it asks makes the first a relay, giving back something else makes
-  // the second a converter. Same demand means each receives precisely what
-  // survived the crossings, so the gap between them is the free passage alone.
+  // Identical demands, differing only by role: the relay gives back what it
+  // took, the reagent gives back something else. Demand is set above anything
+  // a source can deliver, so receiving is never capped by it.
   const reagent = (name: string, yields: Ledger): MaterialComponent => ({
     id: name,
     name,
     description: '',
-    demands: { motion: 12 },
+    demands: { motion: MAX_LEDGER_ENTRY },
     yields,
     rarity: 'common',
     isSeed: false,
     createdAt: 0,
     updatedAt: 0,
   })
-  const probeRelay = reagent('probe relay', { motion: 12 })
-  const probeReagent = reagent('probe reagent', { heat: 12 })
+  const probeRelay = reagent('probe relay', { motion: MAX_LEDGER_ENTRY })
+  const probeReagent = reagent('probe reagent', { heat: MAX_LEDGER_ENTRY })
 
   const arriving = (occupant: MaterialComponent) => {
-    // Under the prayer: the two forms that spare the transit would make the relay
-    // and the reagent cost the same, which is correct behaviour and useless as a
-    // probe of the relay rule.
+    // Under the prayer: forms that spare the transit make the relay and the
+    // reagent cost the same, which is correct but useless as a probe here.
     const r = computeReaction(
       [
         { slotIndex: 1, component: source },
@@ -396,20 +387,15 @@ function relayProbe(): void {
   console.log(`  reached a reagent at IV   ${reagentGot}   (transit ${released - reagentGot})`)
   console.log(
     `  roles: ${describeRole(probeRelay)} / ${describeRole(probeReagent)}` +
-      `  ${relayGot === reagentGot + 1 ? 'OK' : 'BROKEN: the relay is not free'}`,
+      `  ${relayGot === reagentGot + TRANSIT_LOSS_REAGENT ? 'OK' : 'BROKEN: the relay is not free'}`,
   )
 }
 
 /**
- * The free-completion exploit, as a regression check. A relay used to be exempt
- * from the toll — its demand was a rating rather than a requirement — so dropping
- * one into a far-off hole raised `completion` and could not be billed for the
- * demand it then failed to meet: two of them took a four-reagent ring from 8
- * delivered to 14 with the toll unmoved at 7.
- *
- * A relay is now an ordinary reagent but for the free crossing, so an isolated one
- * must *cost* something. What this prints is the change in manifestation and in
- * toll from padding a sparse ring with two of them; the toll must go up.
+ * Regression check: a relay is an ordinary reagent but for the free crossing,
+ * so an isolated, starved one must still cost something. Prints the change in
+ * manifestation and toll from padding a sparse ring with two relays — toll
+ * must rise whenever they go unfed.
  */
 function isolatedRelaysMustCost(): void {
   const relays = CATALOG.filter((c) => describeRole(c) === 'relay')
@@ -422,7 +408,7 @@ function isolatedRelaysMustCost(): void {
   state = 0x1c0ffee
 
   for (let i = 0; i < 4000; i++) {
-    // A run of reagents at the front of the ring, so the back half is all holes.
+    // Reagents at the front of the ring, so the back half is all holes.
     const reagents = 2 + Math.floor(rand() * 3)
     const ring: Placement[] = [{ slotIndex: 0, component: pick(sources) }]
     const pool = shuffled(rest)
@@ -440,10 +426,9 @@ function isolatedRelaysMustCost(): void {
     gained += withRelays.manifestationTotal - bare.manifestationTotal
     tolled += extraToll
 
-    // The exploit, precisely: the added relays went hungry and the caster was not
-    // billed for it, yet the ring still delivered more. A *fed* relay adding
-    // completion is not an exploit — that is what every fed reagent does, and the
-    // current had to survive the walk to reach it.
+    // The exploit: the relays went hungry, the caster wasn't billed, yet the
+    // ring still delivered more. A *fed* relay adding completion is not an
+    // exploit — that's what every fed reagent does.
     const starved = [5, 7].some((slotIndex) => {
       const report = withRelays.slots.find((s) => s.slotIndex === slotIndex)
       return report ? ledgerTotal(report.shortfall) > 0 : false
@@ -462,17 +447,9 @@ function isolatedRelaysMustCost(): void {
 
 /**
  * A player who never looks further back than the slot immediately before the
- * one they are filling — reading its whole yield ledger, aware of the flat
- * transit tax, and always taking the strongest reagent that still fits — used to
- * complete a toll-free eight-reagent ring on every single attempt, at output
- * matching the deliberate `fedRing` search above. That is not a trade carelessness
- * should be able to reach for free, and it is why the catalog was retuned in
- * August 2026 to thin the free reagents and put most conversions underwater; see
- * the note at the top of `seedComponents.ts`.
- *
- * This is a permanent regression check on that retune: the naive builder's
- * toll-free rate must stay well under what a shrug and a glance at the last slot
- * used to buy.
+ * one they're filling, always taking the strongest reagent that still fits.
+ * Permanent regression check: this naive strategy's toll-free rate must stay
+ * well under 50%, or carelessness is a complete strategy again.
  */
 function naiveChainRing(reagents: number): Placement[] {
   const source = pick(SOURCES)
@@ -523,28 +500,93 @@ function naiveChainProbe(): void {
   )
 }
 
+/**
+ * The full ring (8 reagents) at each caster level, random and fed — the table
+ * the level curve in CLAUDE.md is drawn from. Watch the gap between "fed
+ * manif" and careless net: it should widen with level, not close, or the
+ * curve has stopped rewarding skill more at the top than the bottom.
+ */
+function levelReport(): void {
+  console.log('\n=== full ring (8 reagents) by caster level ===')
+  console.log(
+    'lvl power   manif   toll   bled  dead  fed-manif  fed-dead',
+  )
+  for (const level of CASTER_LEVELS) {
+    state = 0x1e0e1 + level
+    let manif = 0
+    let toll = 0
+    let bled = 0
+    let dead = 0
+    for (let i = 0; i < PER_COUNT; i++) {
+      const row = resolve(randomRing(RING_SLOT_COUNT), PLAIN, level)
+      manif += row.manifestation
+      toll += row.toll
+      bled += row.bled
+      if (row.manifestation === 0) dead++
+    }
+    // Same avg/pct convention as `table()`/`formReport()`, scoped to this level's sample size.
+    const avg = (total: number) => (total / PER_COUNT).toFixed(1)
+    const pct = (count: number) => `${Math.round((count / PER_COUNT) * 100)}%`
+
+    const fedTrials = PER_COUNT / 8
+    let fedManif = 0
+    let fedDead = 0
+    for (let i = 0; i < fedTrials; i++) {
+      const row = resolve(fedRing(RING_SLOT_COUNT, level), PLAIN, level)
+      fedManif += row.manifestation
+      if (row.manifestation === 0) fedDead++
+    }
+    const fedAvg = (total: number) => (total / fedTrials).toFixed(1)
+    const fedPct = (count: number) => `${Math.round((count / fedTrials) * 100)}%`
+
+    console.log(
+      String(level).padStart(3) +
+        LEVEL_POWER[level].toFixed(2).padStart(6) +
+        avg(manif).padStart(8) +
+        avg(toll).padStart(7) +
+        avg(bled).padStart(7) +
+        pct(dead).padStart(6) +
+        fedAvg(fedManif).padStart(11) +
+        fedPct(fedDead).padStart(10),
+    )
+  }
+}
+
+/**
+ * The measuring forms must never charge a toll, at every level, not only the
+ * level-five default the rest of this harness runs at. Guards against a
+ * careless change to `forCaster` in `reaction.ts` quietly breaking that.
+ */
+function measuringFormsNeverChargeAcrossLevels(): void {
+  state = 0x5a1e5
+  let checked = 0
+  for (const level of CASTER_LEVELS) {
+    for (let i = 0; i < 1000; i++) {
+      const reagents = 1 + Math.floor(rand() * RING_SLOT_COUNT)
+      const ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
+      for (const form of SPELL_FORMS) {
+        if (FORM_META[form].underfed !== 'measure') continue
+        const r = computeReaction(ring, form, level)
+        checked++
+        if (r.tollTotal !== 0) {
+          throw new Error(`${form} measures but charged ${r.tollTotal} at level ${level}`)
+        }
+      }
+    }
+  }
+  console.log('\n=== measuring forms never charge, across every level ===')
+  console.log(`${checked} checks, all zero  OK`)
+}
+
 // -------------------------------------------------------------------- forms
 
 /**
- * The seven forms over the same rings, and the three questions worth asking of
- * them.
- *
- * Is each form ever the right choice? Two win columns, because there is no single
- * objective in this game and a form that serves neither is dead in the picker.
- * `loud` counts rings where the form delivered most, and `cheap` counts rings where
- * it scored best on manifestation minus toll.
- *
- * Read `cheap` with care. It treats a unit taken out of the caster as exactly as
- * bad as a unit delivered, which makes doing nothing a strong play: a holding form
- * scoring 0 beats a firing form scoring 18 against a toll of 25. That is what
- * exposed the first cut of the underfed rule, where a binary hold made the three
- * measuring forms sweep `cheap` at an average manifestation of 0.6.
- *
- * Is each condition a real question? `met` is the share of rings answering it. At
- * 100% the condition is free and the forfeit is unreachable; at 0% the boon is.
- *
- * Do the measuring forms ever charge? They must not, under any ring, which is
- * asserted rather than reported.
+ * The seven forms over the same rings. `loud` counts rings where a form
+ * delivered most; `cheap` counts rings where it scored best on manifestation
+ * minus toll (read with care — a holding form scoring 0 beats a firing one
+ * losing money, so it rewards doing nothing). `met` is the share of rings
+ * answering the condition: 100% means it's free, 0% means it's unreachable.
+ * Measuring forms are asserted, not just reported, to never charge.
  */
 function formReport(): void {
   interface FormCell {
@@ -632,28 +674,19 @@ function formReport(): void {
 }
 
 /**
- * Each form on ground it chose: rings that answer its condition, scored against the
- * prayer on the very same ring.
+ * Each form on ground it chose: rings that answer its condition, scored
+ * against the prayer on the same ring, over two cohorts.
  *
- * Run twice, over rings drawn two ways, and the pair is the point.
+ * On **careless** rings the five crediting forms look strong and the two
+ * measuring ones look weak — that's the underfed rule, not the condition: a
+ * measuring form declines the credit a starved prayer collects. On **fed**
+ * rings a measuring form and the prayer resolve identically, so whatever
+ * separates them there is the condition's relief alone — the column to read
+ * when tuning a condition.
  *
- * On **careless** rings — reagents thrown in — the four crediting forms look strong
- * and the three measuring ones look broken. They are not. A careless ring feeds the
- * average slot 38% of what it asked, and the prayer's output there is almost
- * entirely reagents firing on demands nothing ever met, which is exactly what its
- * toll of 20-odd is buying. A measuring form declines that credit, so it delivers
- * little and charges nothing, and the comparison is a statement about the two
- * underfed rules rather than about either form.
- *
- * On **fed** rings — every reagent supplied in full — a measuring form and the
- * prayer resolve identically, because nothing is stinted when nothing is short.
- * Whatever separates them there is the condition alone, which is what the boon is
- * actually worth. This is the column to read when tuning a condition.
- *
- * Rings are found by rejection: draw, then keep the ones the real predicate accepts,
- * so the shapes are never described twice and cannot drift from `FORM_META`. Failing
- * to find any is itself the reachability check — a condition no ring satisfies is a
- * form that only ever carries its forfeit.
+ * Rings are found by rejection sampling against the real `FORM_META`
+ * predicate, so shapes can't drift from the resolver. Finding none is itself
+ * the reachability check.
  */
 function formsOnTheirOwnGround(): void {
   const WANTED = 1200
@@ -661,8 +694,7 @@ function formsOnTheirOwnGround(): void {
 
   for (const cohort of ['careless', 'fed'] as const) {
     state = cohort === 'fed' ? 0xfed0fed : 0xd16e5
-    // Feeding an arbitrary slot set is dear, so the fed cohort is smaller and
-    // screens the shape with a throwaway random ring before paying for the fill.
+    // Feeding an arbitrary slot set is dear, so the fed cohort is smaller.
     const wanted = cohort === 'fed' ? 300 : WANTED
     const cap = cohort === 'fed' ? 60000 : CAP
     console.log(`\n=== each form on ${cohort} rings that answer it, against the prayer ===`)
@@ -680,26 +712,27 @@ function formsOnTheirOwnGround(): void {
       let toll = 0
       let plainManifestation = 0
       let plainToll = 0
+      // Litany and dirge ask about roles/resolved state, not slot positions,
+      // so they skip the shape pre-screen below and are gated after the fill.
+      const geometric = form !== 'litany' && form !== 'dirge'
 
       while (found < wanted && tries < cap) {
         tries++
         const reagents = 1 + Math.floor(rand() * RING_SLOT_COUNT)
         let ring: Placement[]
         if (cohort === 'fed') {
-          // Screen a throwaway ring in these slots first. It settles the four
-          // conditions that only read the shape, and costs nothing next to the fill.
+          // Screen a throwaway ring against the shape first when the condition
+          // only reads slot positions, before paying for the fill.
           const shape = randomRing(reagents)
-          if (!conditionRelief(form, shape).met) continue
+          if (geometric && !conditionRelief(form, shape, buildConditionContext(shape, 5)).met) continue
           ring = fedRingIn(shape.map((p) => p.slotIndex))
         } else {
           ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
         }
         if (ring.length === 0) continue
-        // The gate is the predicate itself, not a resolved ring. `computeReaction`
-        // reads `conditionMet` straight off `conditionRelief` before it walks a
-        // single slot, and most draws here are rejected — paying for a full walk to
-        // answer a question about slot indices was most of this harness's runtime.
-        if (!conditionRelief(form, ring).met) continue
+        // The gate is the predicate itself: `conditionRelief` before any slot
+        // is walked, except dirge, which resolves a lazy baseline ring.
+        if (!conditionRelief(form, ring, buildConditionContext(ring, 5)).met) continue
 
         found++
         const own = resolve(ring, form)
@@ -711,9 +744,8 @@ function formsOnTheirOwnGround(): void {
       }
 
       if (found === 0) {
-        // Expected for the elegy when fed, and only for the elegy: it forbids a
-        // source anywhere, so the first reagent the current reaches has nothing to
-        // draw on and must starve. An elegy always pays something, by construction.
+        // Expected only for the fed elegy: it forbids a source, so the first
+        // reagent the current reaches must starve.
         const why = cohort === 'fed' && form === 'elegy' ? '  (no source, so it cannot be fed)' : ''
         console.log(`${form.padEnd(13)}UNREACHABLE in ${tries} tries${why}`)
         continue
@@ -733,22 +765,19 @@ function formsOnTheirOwnGround(): void {
 }
 
 /**
- * A crossing must be paid by the current it is carrying, not by whatever else
- * happens to be in the ring.
- *
- * The pair: a reagent fed across two holes, with and without an unrelated source
- * standing at slot I. Billing the oldest parcel first made the source absorb every
- * crossing in the lap, so the chain behind it travelled free and the same arc read
- * 7 with the source and 2 without. Both readings must now agree.
- *
- * The second half is the other side of the same rule. A lone source demands
- * nothing, so nothing it carries was ever asked for; without the fallback to the
- * oldest current it would ride the whole ring untouched and cross for free.
+ * A crossing must be paid by the current it's carrying, not by whatever else
+ * is in the ring: a chain fed across two holes must receive the same whether
+ * or not an unrelated source stands elsewhere, and a lone source (which
+ * demands nothing) must still pay its own lap in full rather than riding it
+ * untouched.
  */
 function transitPayerProbe(): void {
   const source = MOTION_SOURCE
-  const feeder = CATALOG.find((c) => ledgerAmount(c.yields, 'heat') >= 7)
-  const eater = CATALOG.find((c) => ledgerAmount(c.demands, 'heat') >= 7)
+  // Two gaps plus the crossing into the eater's own slot: the feeder needs
+  // enough to clear that path with something to spare.
+  const pathCost = 2 * TRANSIT_LOSS_GAP + TRANSIT_LOSS_REAGENT
+  const feeder = CATALOG.find((c) => ledgerAmount(c.yields, 'heat') >= pathCost + 2)
+  const eater = CATALOG.find((c) => ledgerAmount(c.demands, 'heat') >= pathCost + 2)
   if (!source || !feeder || !eater) {
     console.log('\n=== the transit payer: no heat chain in the catalog to probe with ===')
     return
@@ -766,7 +795,12 @@ function transitPayerProbe(): void {
   const shielded = arriving([{ slotIndex: 0, component: source }, ...chain])
 
   const lone = computeReaction([{ slotIndex: 0, component: source }], PLAIN)
-  const lap = ledgerTotal(source.yields) - lone.bledTotal
+  const released = ledgerTotal(source.yields)
+  // Fixed lap cost, not scaled to the catalog. Checking `bledTotal` against it
+  // (rather than requiring the source's whole yield to vanish) keeps the
+  // probe valid whether the yield sits below or above the lap's cost.
+  const lapCost = (RING_SLOT_COUNT - 1) * TRANSIT_LOSS_GAP + TRANSIT_LOSS_REAGENT
+  const chargedInFull = lone.bledTotal >= Math.min(released, lapCost)
 
   console.log('\n=== the transit payer (feeder at III, hole, hole, reagent at VI) ===')
   console.log(`${feeder.name} releases heat ${ledgerAmount(feeder.yields, 'heat')}`)
@@ -776,7 +810,7 @@ function transitPayerProbe(): void {
     `  a source cannot pay another chain's way  ${alone === shielded ? 'OK' : 'BROKEN: the chain was shielded'}`,
   )
   console.log(
-    `  a lone source still decays over its lap  ${lap <= 0 ? 'OK' : `BROKEN: ${lap} units crossed free`}`,
+    `  a lone source pays its lap in full        ${chargedInFull ? 'OK' : `BROKEN: only ${lone.bledTotal} of ${Math.min(released, lapCost)} lost`}`,
   )
 }
 
@@ -784,18 +818,19 @@ relayProbe()
 transitPayerProbe()
 isolatedRelaysMustCost()
 naiveChainProbe()
+levelReport()
+measuringFormsNeverChargeAcrossLevels()
 formReport()
 formsOnTheirOwnGround()
 
-// One ring, resolved and printed slot by slot, to read against the laws as written.
-// Drawn from the full catalog rather than the balance-envelope `CATALOG`, since it
-// is illustrative rather than a measurement and two of its reagents are `rare`.
+// One ring, resolved and printed slot by slot, to read against the laws as
+// written. Drawn from the full catalog, not the balance-envelope `CATALOG`.
 const worked: Placement[] = [
   'Falling Weight',
   'Lodestone',
   'Bismuth Crystal',
   'Tourmaline',
-  'Charcoal',
+  'Grindwheel',
   'Hoarfrost',
 ].map((name, slotIndex) => ({
   slotIndex,
@@ -804,7 +839,7 @@ const worked: Placement[] = [
 
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 const reaction = computeReaction(worked, PLAIN)
-console.log('\n=== worked example: weight, lodestone, bismuth, tourmaline, charcoal, hoarfrost ===')
+console.log('\n=== worked example: weight, lodestone, bismuth, tourmaline, grindwheel, hoarfrost ===')
 function show(ledger: Parameters<typeof ledgerEntries>[0]): string {
   const entries = ledgerEntries(ledger).map(([c, n]) => `${CURRENCY_META[c].short} ${n}`)
   return entries.length ? entries.join(', ') : '-'

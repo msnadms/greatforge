@@ -1,5 +1,6 @@
-import type { CSSProperties } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { componentHue } from '../data/currencies'
+import { ledgerForCaster } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import { LedgerLine } from './LedgerLine'
@@ -10,15 +11,25 @@ import { LedgerLine } from './LedgerLine'
  */
 export function DragLayer() {
   const { preview } = useDrag()
-  const { componentsById } = useWorkshop()
+  const { componentsById, draft } = useWorkshop()
+  const component = preview ? componentsById.get(preview.componentId) : undefined
 
-  if (!preview) return null
+  // Memoized since `preview` changes on every pointermove but the component
+  // and its level don't.
+  const scaled = useMemo(
+    () =>
+      component
+        ? {
+            demands: ledgerForCaster(component.demands, draft.casterLevel),
+            yields: ledgerForCaster(component.yields, draft.casterLevel),
+          }
+        : null,
+    [component, draft.casterLevel],
+  )
 
-  const component = componentsById.get(preview.componentId)
-  if (!component) return null
+  if (!preview || !component || !scaled) return null
 
-  // Centred on the cursor, matching how a slot centres its own card, so the
-  // preview sits exactly where the component will land.
+  // Centred on the cursor, matching how a slot centres its own card.
   const style: CSSProperties = {
     transform: `translate3d(${preview.x}px, ${preview.y}px, 0) translate(-50%, -50%)`,
     '--slot-hue': componentHue(component),
@@ -32,7 +43,7 @@ export function DragLayer() {
     >
       <span className="slot__body">
         <span className="slot__name">{component.name}</span>
-        <LedgerLine demands={component.demands} yields={component.yields} />
+        <LedgerLine demands={scaled.demands} yields={scaled.yields} />
       </span>
     </div>
   )

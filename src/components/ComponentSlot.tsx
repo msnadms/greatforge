@@ -1,7 +1,8 @@
-import type { CSSProperties } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import { componentHue, describeLedger, describeRole } from '../data/currencies'
-import type { SlotReport } from '../lib/reaction'
+import { ledgerForCaster, type SlotReport } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
+import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, ledgerTotal, type MaterialComponent } from '../types/worldbuilding'
 import { LedgerLine } from './LedgerLine'
 import { RoleSigil } from './RoleSigil'
@@ -34,6 +35,7 @@ export function ComponentSlot({
   onClear,
 }: ComponentSlotProps) {
   const { preview, startDrag } = useDrag()
+  const { draft } = useWorkshop()
 
   const armed = Boolean(armedComponentId) && !readOnly
   const over = preview?.overSlot === index
@@ -41,20 +43,23 @@ export function ComponentSlot({
   const role = component ? describeRole(component) : null
   const shortfall = report?.shortfall ?? {}
   const starved = ledgerEntries(shortfall).length > 0
+  // Scaled to what this caster can command, memoized since a slot re-renders
+  // on every pointermove during a drag.
+  const { demands, yields } = useMemo(
+    () =>
+      component
+        ? {
+            demands: ledgerForCaster(component.demands, draft.casterLevel),
+            yields: ledgerForCaster(component.yields, draft.casterLevel),
+          }
+        : { demands: {}, yields: {} },
+    [component, draft.casterLevel],
+  )
 
-  /**
-   * What this slot asked for against what reached it. The badge gives the size of
-   * the gap; this gives the two numbers it came from, which is the part that is
-   * not obvious on a chain — a reagent short by one unit hands on less than its
-   * catalog yield, and the reagent after it starves on numbers that look like
-   * they should have fed it.
-   *
-   * What the shortfall then settles for is the form's business and is stated once,
-   * in the panel, from `UNDERFED_RULE`.
-   */
+  /** What this slot asked for against what it actually received. */
   const starvation =
     starved && component && report
-      ? `Asked ${describeLedger(component.demands)}, received ${describeLedger(report.received)}.`
+      ? `Asked ${describeLedger(demands)}, received ${describeLedger(report.received)}.`
       : ''
 
   const classes = [
@@ -70,18 +75,14 @@ export function ComponentSlot({
     .join(' ')
 
   // A viewed card shows the role as a sigil and drops the name, so the label
-  // carries both: the glyph is only readable if something says the word.
+  // states both.
   const standing = component
     ? readOnly && role
       ? `: ${component.name}, a ${role}`
       : `: ${component.name}`
     : ', empty'
   const where = `Slot ${index + 1}${standing}.`
-  // Said in full rather than summarised: the badge is a colour and a number on
-  // the card, and this is the only form of it anyone not looking at it gets.
   const toll = starved ? ` Starved by ${ledgerTotal(shortfall)}. ${starvation}` : ''
-  // The mark is a colour on the card, so the same fact is said here for anyone
-  // who is not looking at it.
   const asked = named ? " Named by the form's condition." : ''
   const label = readOnly
     ? `${where}${toll}${asked}`
@@ -96,19 +97,14 @@ export function ComponentSlot({
       <span className="slot__rune" aria-hidden="true">
         {ROMAN[index] ?? index + 1}
       </span>
-      {/*
-        A circle being read shows what each reagent does to the current rather
-        than which reagent it is, so the token carries the sigil alone: no name,
-        and no ledger either. Both are what the card is wide for, and a working
-        is read for its shape. The numbers are in the panel, the name is on hover.
-      */}
+      {/* A viewed token shows only the role sigil, no name or ledger. */}
       {component ? (
         readOnly && role ? (
           <RoleSigil role={role} />
         ) : (
           <span className="slot__body">
             <span className="slot__name">{component.name}</span>
-            <LedgerLine demands={component.demands} yields={component.yields} labels="none" />
+            <LedgerLine demands={demands} yields={yields} labels="none" />
           </span>
         )
       ) : null}
@@ -120,9 +116,8 @@ export function ComponentSlot({
     </>
   )
 
-  // A viewed slot is not a button and carries no `data-slot-index`, so it is out
-  // of the tab order and a drag released over it finds no target at all. `img`
-  // reads the whole card as the one static thing it now is.
+  // A viewed slot renders as a `div role="img"` with no `data-slot-index`, so
+  // it drops out of the tab order and a drag released over it finds no target.
   if (readOnly) {
     return (
       <div
@@ -130,8 +125,6 @@ export function ComponentSlot({
         style={{ ...style, ...(hue === null ? undefined : ({ '--slot-hue': hue } as CSSProperties)) }}
         role="img"
         aria-label={label}
-        // The name alone. It is the one thing the token no longer shows, and a
-        // paragraph of flavour is the wrong answer to "what is that sigil".
         title={component ? component.name : undefined}
       >
         {inside}

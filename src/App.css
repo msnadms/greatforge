@@ -114,6 +114,37 @@
   color: var(--text);
 }
 
+/* -------------------------------------------------------------------- level */
+
+.level__steps {
+  display: flex;
+  gap: 3px;
+}
+
+.level__step {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.level__step:hover {
+  border-color: var(--accent-border);
+}
+
+.level__step--active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--text-h);
+}
+
 .storage-alert {
   margin-left: auto;
   display: flex;
@@ -219,13 +250,8 @@
 }
 
 /*
- * A reagent's name, engraved on the rim of a working being read. The token shows
- * a sigil and no words, so the name is set outside every ring where it crowds
- * neither the glyph nor the arcs.
- *
- * Sized in stage units like the strokes above it, not in screen pixels: the whole
- * engraving is drawn in a 100-unit box that scales with the circle, so a name set
- * here grows and shrinks with the ring it is cut into.
+ * A reagent's name, engraved on the rim of a working being read. Sized in stage
+ * units, not screen pixels, so it scales with the ring it's cut into.
  */
 .circle__name {
   fill: var(--rune);
@@ -241,13 +267,9 @@
   opacity: 0.4;
 }
 
-/*
- * The mouth, cut between slot VIII and slot I. It is heavier than a spoke and
- * runs out past the outer ring, since the whole point of it is that the current
- * leaves the circle here — a spoke's weight would read as a ninth division.
- * Engraving rather than state, so it takes the border colour and never the
- * accent or the gilt, both of which mean something the caster did.
- */
+/* The mouth, cut between slot VIII and slot I, where current leaves the circle.
+   Heavier than a spoke and runs past the outer ring; takes the border colour,
+   never accent or gilt, since it's engraving rather than caster state. */
 .circle__mouth {
   stroke: var(--border-strong);
   stroke-width: 0.22;
@@ -255,23 +277,14 @@
 }
 
 /*
- * Current running clockwise from slot to slot. Each arc's stroke is a still
- * gradient (`SpellCircle` builds one `linearGradient` per pair of slots)
- * rather than a flat colour: one stop per occupied slot along the arc, in
- * ring order, each coloured by whichever currency that slot is holding the
- * most of this casting. The colour is live to the numbers, not fixed to the
- * catalog: the same reagent reads differently fed differently.
+ * Current running clockwise from slot to slot. Each arc is a gradient
+ * (`SpellCircle` builds one `linearGradient` per pair of slots), one stop per
+ * occupied slot coloured by whichever currency it holds most of this casting.
  *
- * Every arc is drawn at one width. Width used to carry the amount, and at this
- * radius a fat flow stopped reading as a line at all — the dashes it used to be
- * drawn with ran together into a smear, and a thick arc beside a thin one read
- * as two different kinds of thing rather than two sizes of the same one. The
- * amount is on the arc's own tooltip and spelled out in the panel, so nothing
- * is lost by holding the stroke to one width.
- *
- * Fully opaque, on purpose: `circle__ring--inner` is a full circle at this
- * same radius, drawn underneath every arc, and any transparency here lets
- * that grey engraving bleed through the gradient and dull it toward brown.
+ * One width for every arc — the amount lives in the tooltip and the panel, not
+ * in stroke weight, since a fat arc at this radius read as a smear rather than
+ * a thicker line. Fully opaque, or `circle__ring--inner` underneath bleeds
+ * through the gradient and dulls it toward brown.
  */
 .circle__flow {
   fill: none;
@@ -279,14 +292,9 @@
   stroke-linecap: round;
 }
 
-/*
- * The manifestation, drawn leaving through the mouth. One curve per currency
- * still in flight when the ring closed, its length reading the amount
- * (`manifestLinePath`) and its colour the currency's own hue, same as a flow
- * arc's stops — but the line's own gradient fades its opacity out along its
- * length rather than shifting hue, since it carries one currency rather than
- * a walk across several. Slightly thinner than a flow arc for the same reason.
- */
+/* The manifestation, leaving through the mouth: one curve per currency still in
+   flight when the ring closed, length reading the amount (`manifestLinePath`),
+   fading in opacity along its length rather than shifting hue. */
 .circle__manifest {
   fill: none;
   stroke-width: 0.32;
@@ -372,12 +380,8 @@
   cursor: grabbing;
 }
 
-/*
- * A slot in a working being read. It keeps its card, its hue and its starved
- * marking — the point of view mode is to show the circle as it was laid — and
- * gives up only the handling: no grab cursor, no text selection to fight the
- * drag that is no longer offered.
- */
+/* A slot in a working being read: keeps its card, hue and starved marking, gives
+   up only the handling — no grab cursor, no drag on offer. */
 .slot--readOnly {
   cursor: default;
 }
@@ -393,14 +397,9 @@
 
 /*
  * A working being read collapses its filled slots to the round token an empty
- * slot already is, so the ring is eight of one shape and the arcs between them
- * are the loudest thing on the circle. The card is the width it is to hold a
- * name and a ledger; a viewed token shows neither, so the width was only pushing
- * the eight of them out against the book.
- *
- * The numeral stacks above the sigil rather than sitting in the gutter it has on
- * a card: there is no gutter left, and 'VIII' laid beside a centred glyph in
- * 58px would cross it.
+ * slot already is, so the ring is eight of one shape and the flow arcs are the
+ * loudest thing on the circle. The numeral stacks above the sigil since there's
+ * no gutter left for it at 58px.
  */
 .circle--view .slot--filled {
   width: 58px;
@@ -434,14 +433,11 @@
 }
 
 /*
- * A slot the spoken form's condition names, marked whether the condition holds or
- * not — the wash says the form is looking here, and the panel says how it went.
- *
- * Gilt, and never red: red is unmet demand, and a reagent washed in it would read
- * as starved when the form has only pointed at it. It is a fill rather than a
- * border so it cannot be confused with `.slot--starved` either, which keeps the
- * edge and the glow. An empty slot gets an inner ring as well, since 14% of
- * anything over a dashed 58px circle is nearly nothing.
+ * A slot the spoken form's condition names, marked whether the condition holds
+ * or not. Gilt, never red — red is unmet demand, and this is just the form
+ * pointing. A fill rather than a border so it can't be confused with
+ * `.slot--starved`. An empty slot also gets an inner ring, since 14% of
+ * anything over a dashed circle is nearly nothing.
  */
 .slot--named::after {
   content: '';
@@ -503,12 +499,8 @@
   line-height: 1.2;
 }
 
-/*
- * The role sigil, which stands where the name does on a working being read.
- * Drawn in the reagent's own pigment at the reserved saturation `--gem-s` is
- * for, since it is a stroke and sits beside the demand pips that use the same
- * pairing.
- */
+/* The role sigil, stood where the name is on a working being read, drawn in the
+   reagent's own pigment at the reserved (stroke) saturation. */
 .slot__sigil {
   display: flex;
   align-items: center;
@@ -640,9 +632,7 @@
   border: 0;
   padding: 0;
   margin: 0;
-  /* The book's pages are a fixed height and scroll. Without this a flex item is
-     free to shrink below its content, which squashes the inputs and slides the
-     next label up over them instead of producing the scrollbar. */
+  /* Without this a flex item shrinks below its content instead of scrolling. */
   flex-shrink: 0;
 }
 
@@ -704,14 +694,9 @@
 
 /* ---------------------------------------------------------- spellbook, read */
 
-/*
- * The written page. No field carries its name here: the working is shown as it
- * was set down, and the notes are told from the words by which page they are on
- * and what they are set in — the text keeps the hand it was written in, the
- * notes stay in the body face.
- */
-/* The pages stay evenly split: the spine is painted at the halfway mark, and an
-   uneven split both misplaces it and squeezes the title into three lines. */
+/* The written page: no field carries its name, notes and text are told apart by
+   which page they're on and what face they're set in. Pages stay evenly split so
+   the spine paints at the halfway mark. */
 .book--view .book__page {
   gap: 8px;
 }
@@ -829,11 +814,8 @@
   color: var(--rune);
 }
 
-/*
- * The form's name and the underfed setting's name, both of which carry their prose
- * on hover. The dotted rule under them is the only thing saying so, so it goes on
- * both and nowhere else on this line.
- */
+/* The form's and underfed setting's names carry prose on hover; the dotted
+   underline is the only thing saying so. */
 .reaction__formLine strong,
 .reaction__formTag {
   color: var(--accent);
@@ -843,13 +825,8 @@
   text-underline-offset: 3px;
 }
 
-/*
- * What the form asks of the circle, and whether the circle as placed answers it.
- * Gilt for held, danger for failed — the same two tokens the rest of the bench
- * uses for a working that is sound and one that is costing the caster, so the
- * condition reads at a glance while reagents are being moved around. A cold circle
- * takes neither and sits in the plain border.
- */
+/* What the form asks and whether the circle answers it. Gilt for held, danger
+   for failed — the same tokens used elsewhere, so it reads at a glance. */
 .reaction__condition {
   margin-top: 3px;
   padding: 6px 8px;
@@ -1068,10 +1045,7 @@
   width: auto;
 }
 
-/*
- * The two currency columns and the sort row run the full width under the search
- * and the part select, which share the first row.
- */
+/* Currency columns and the sort row run full width under the search/part row. */
 .tray__group,
 .tray__sortRow {
   grid-column: 1 / -1;
@@ -1151,11 +1125,8 @@
   box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
-/*
- * The codex while a working is being read. Still a catalog to look through and
- * still editable as components, but nothing here can be aimed at a circle that
- * would refuse it, so it drops the grab cursor and lets its text be selected.
- */
+/* The codex while a working is being read: still editable, but nothing here can
+   be aimed at the circle, so it drops the grab cursor and allows text selection. */
 .tray__item--inert,
 .tray__item--inert:active {
   cursor: default;
@@ -1287,12 +1258,8 @@
   cursor: default;
 }
 
-/*
- * A chip that is really a checkbox. The box itself is kept in the document
- * rather than removed with `display: none`, so it stays focusable and reachable
- * by the keyboard; the chip's own fill is the checked state, and the ring below
- * is what tells a keyboard user where they are.
- */
+/* A chip that is really a checkbox: the input stays in the document (not
+   `display: none`) so it's keyboard-focusable and reachable. */
 .chip--check {
   display: inline-flex;
   align-items: center;
@@ -1300,11 +1267,8 @@
   padding: 2px 7px;
   user-select: none;
   -webkit-user-select: none;
-  /*
-   * Outline when it is not chosen, filled when it is — the same distinction the
-   * ledger pips already draw between what a reagent asks and what it gives, so ten
-   * of these in a column read as a row of switches rather than ten colours.
-   */
+  /* Outline when unchosen, filled when chosen — same distinction the ledger
+     pips draw between demand and yield. */
   background: transparent;
   color: hsl(var(--chip-hue, 40) var(--gem-s) var(--gem-l));
   border-color: hsl(var(--chip-hue, 40) var(--gem-s) 55% / 0.45);

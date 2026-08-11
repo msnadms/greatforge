@@ -3,16 +3,9 @@ import { type Role } from '../data/currencies'
 /**
  * The five roles as sigils, for a working being read rather than built.
  *
- * Keyed by role and never by material. Roles are derived from the ledgers
- * (`describeRole`), so a sigil follows an edited reagent the moment its numbers
- * change, exactly as the tray's label and the card's hue already do. A glyph per
- * material would have nothing to draw for a reagent the user wrote themselves.
- *
- * They are cut from one vocabulary rather than drawn as five separate pictures,
- * so a laid circle reads as a single notation: a triangle rising gives back more
- * than it was handed, a triangle falling is where something goes to be taken, a
- * disc is a body, and a bar is either the road a current runs or the floor it
- * stops against.
+ * Keyed by role, never by material — roles are derived from the ledgers
+ * (`describeRole`), so a sigil follows an edited reagent the moment its
+ * numbers change.
  */
 
 /** Rounded so React emits `16.24` rather than sixteen decimal places of it. */
@@ -20,11 +13,7 @@ function at(centre: number, radius: number, trig: number): number {
   return Number((centre + radius * trig).toFixed(2))
 }
 
-/**
- * The source's rays, struck at the eight compass points. Generated rather than
- * typed out for the same reason `SpellCircle` generates its spokes: eight hand
- * written coordinate pairs drift.
- */
+/** The source's rays, struck at the eight compass points. */
 const RAYS = Array.from({ length: 8 }, (_, i) => {
   const angle = (i * Math.PI) / 4
   const cos = Math.cos(angle)
@@ -39,8 +28,7 @@ const RAYS = Array.from({ length: 8 }, (_, i) => {
 
 function Glyph({ role }: { role: Role }) {
   switch (role) {
-    // A sun: the one thing in the ring that gives without being fed. Filled, so
-    // it cannot be taken for the relay's hollow ring at a glance.
+    // A sun, filled so it isn't mistaken for the relay's hollow ring.
     case 'source':
       return (
         <>
@@ -51,14 +39,12 @@ function Glyph({ role }: { role: Role }) {
         </>
       )
 
-    // The ascending triangle, which is fire in every alchemical hand. It asks
-    // for a little and what leaves is larger.
+    // Ascending triangle: asks for a little, what leaves is larger.
     case 'fuel':
       return <path d="M12 3.5 L20.5 19 L3.5 19 Z" />
 
-    // Two triangles meeting at a point: one currency narrows to nothing and
-    // another opens out of it. The figure for transmutation, doing here what it
-    // has always meant.
+    // Two triangles meeting at a point: one currency narrows to nothing, another
+    // opens out of it.
     case 'converter':
       return (
         <>
@@ -67,12 +53,7 @@ function Glyph({ role }: { role: Role }) {
         </>
       )
 
-    // A ring with the road driven straight through it. The bar crosses the body
-    // and comes out the far side unchanged, which is the whole of the role.
-    // A ring with the road driven straight through it. The bar crosses the body
-    // and comes out the far side unchanged, which is the whole of the role. The
-    // ring is cut wide because a small one reads as a lighter mark than the four
-    // that fill their box, and a relay is not a lesser reagent.
+    // A ring with the road driven straight through it, unchanged on the far side.
     case 'relay':
       return (
         <>
@@ -81,13 +62,8 @@ function Glyph({ role }: { role: Role }) {
         </>
       )
 
-    // The descending triangle, closed off underneath. The bar sits below rather
-    // than through it: alchemy puts it through for earth, but a floor says
-    // swallowed and a crossbar says qualified, and swallowed is the meaning.
-    //
-    // The triangle is cut short of where the fuel's would end to keep four clear
-    // units under the point. At 22px a narrower gap closes up and the pair reads
-    // as one shape rather than a fall arrested.
+    // Descending triangle closed off underneath — a floor, not a crossbar,
+    // because the meaning is "swallowed" rather than "qualified".
     case 'sink':
       return (
         <>
@@ -99,14 +75,10 @@ function Glyph({ role }: { role: Role }) {
 }
 
 /**
- * The sigil takes its colour from `--slot-hue` on the card, so a reagent is the
- * same pigment here as in its border, its glow and its pips.
- *
- * Silent to assistive tech, and carrying no `title` of its own. A glyph standing
- * in for a word is only readable if something says the word, and both jobs belong
- * to the caller: the sigil covers most of a collapsed token, so a tooltip here
- * would win every hover aimed at the card. `ComponentSlot` names the reagent on
- * hover and its role in the `aria-label`.
+ * Takes its colour from `--slot-hue` on the card. Silent to assistive tech and
+ * carries no `title` of its own — the sigil covers most of the token, so a
+ * tooltip here would win every hover; `ComponentSlot` names the reagent and its
+ * role in the `aria-label` instead.
  */
 export function RoleSigil({ role }: { role: Role }) {
   return (

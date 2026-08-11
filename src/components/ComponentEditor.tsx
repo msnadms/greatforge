@@ -72,9 +72,7 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
       },
       component?.id,
     ).then((saved) => {
-      // Only close on a write that landed. Closing regardless threw the draft away
-      // whenever Firestore refused it, leaving the user to retype the component
-      // from a banner elsewhere on the page that says only that something failed.
+      // Only close on a write that landed, so a Firestore failure doesn't lose the draft.
       setSaving(false)
       if (saved) onClose()
       else setError('That could not be saved. The workshop is still holding your changes.')

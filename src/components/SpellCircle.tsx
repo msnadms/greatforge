@@ -3,13 +3,10 @@ import { CURRENCY_META, currencyHue } from '../data/currencies'
 import { conditionSlots } from '../data/spellForms'
 import { useWorkshop } from '../state/useWorkshop'
 import type { SlotReport } from '../lib/reaction'
-import { CURRENCIES, RING_SLOT_COUNT, ledgerEntries, type Currency, type Ledger } from '../types/worldbuilding'
+import { RING_SLOT_COUNT, ledgerEntries, ledgerTotal, type Currency, type Ledger } from '../types/worldbuilding'
 import { ComponentSlot } from './ComponentSlot'
 
-/**
- * Slot centres sit this far from the middle, in percent of the stage. Kept wide
- * enough that a filled slot card clears the corners of the spellbook in the hub.
- */
+/** Slot centres sit this far from the middle, in percent of the stage. */
 const RADIUS = 47
 
 /** Flow arcs run along the inner engraved ring, inside the slot cards. */
@@ -19,11 +16,7 @@ const DEGREES_PER_SLOT = 360 / RING_SLOT_COUNT
 
 /**
  * The mouth: the seam between the last slot and the first, half a slot
- * anticlockwise of slot I. The current runs clockwise from slot I and slot VIII's
- * surplus crosses this one seam to leave, so the cut is where the working ends.
- *
- * Eight identical spokes say nothing about which slot is which, and a circle with
- * no cut in it reads as a walk with no end.
+ * anticlockwise of slot I, where the ring's surplus crosses to leave.
  */
 const MOUTH_ANGLE = -90 - DEGREES_PER_SLOT / 2
 
@@ -32,13 +25,10 @@ const MOUTH_INNER = FLOW_RADIUS - 4
 const MOUTH_OUTER = RADIUS + 6
 
 /**
- * The band the reagents' names are engraved along in view mode, outside the
- * outermost ring and clear of the tokens, which overhang the engraving.
- *
- * The tokens are a fixed 58px while the stage is fluid, so how far out they reach
- * in these units depends on how big the circle is drawn: wider on a small stage,
- * narrower on a large one. The band is set for the small end, which leaves it a
- * little airy on a wide desk and never lets a name run under a token.
+ * The band reagent names are engraved along in view mode, outside the outermost
+ * ring. Tokens are a fixed 58px while the stage is fluid, so how far out they
+ * reach in these stage units varies with stage size; tuned for the small end so
+ * a name never runs under a token, at the cost of looking airy on a wide desk.
  */
 const NAME_RADIUS = 56
 
@@ -48,21 +38,12 @@ const NAME_SIZE = 1.8
 /** A name gets its slot's share of the rim, less a gap so neighbours never touch. */
 const NAME_SPAN = DEGREES_PER_SLOT - 6
 
-/**
- * The manifestation's exit lines start on the flow ring, the same radius the
- * current itself is drawn at (`FLOW_RADIUS`), so a line reads as that current
- * carrying on rather than as a mark hung in the margin. Anchoring further out,
- * on one of the decorative rings, left every line looking cut loose from the
- * thing it is supposed to be leaving.
- */
+/** Exit lines start on the flow ring, the same radius the current is drawn at,
+ * so a line reads as that current carrying on rather than a mark in the margin. */
 const MANIFEST_INNER = FLOW_RADIUS
 
-/**
- * Shortest and longest an exit line is drawn, in stage units. The minimum
- * clears every ring between the flow radius and the rim (about 13 units) with
- * room to spare, so even the smallest manifestation is never left stranded
- * under the engraving it is supposed to be crossing.
- */
+/** Shortest/longest an exit line is drawn, in stage units. The minimum clears
+ * every ring between the flow radius and the rim with room to spare. */
 const MANIFEST_MIN_LENGTH = 22
 const MANIFEST_MAX_LENGTH = 62
 
@@ -94,11 +75,10 @@ function slotPoint(index: number, radius = RADIUS): Point {
 /**
  * The arc slot `index`'s name is set along, centred on the slot's own angle.
  *
- * A name on the lower half of the rim would hang upside down if it followed the
- * clockwise arc, so there the arc is drawn anticlockwise and the name reads
- * outward-up like the rest. Reversing the path also moves the baseline to the
- * other side of it, which would drop those names a line inward; the flipped arcs
- * take a radius one line larger to put the whole band back on one circle.
+ * A name on the lower half of the rim hangs upside down if it follows the
+ * clockwise arc, so there the arc is drawn anticlockwise instead. Reversing
+ * the path also flips the baseline to the other side, so those arcs use a
+ * radius one line larger to keep the whole band on one circle.
  */
 function namePath(index: number): string {
   const centre = -90 + index * DEGREES_PER_SLOT
@@ -118,11 +98,7 @@ function flowBandColor(hue: number): string {
   return `hsl(${hue} var(--gem-s-strong) 55%)`
 }
 
-/**
- * Turns a list of hues into gradient stops, one per hue, evenly spaced so the
- * first is pure at the literal start of the arc and the last is pure at its
- * literal end.
- */
+/** Turns a list of hues into gradient stops, evenly spaced along the arc. */
 function flowStops(hues: number[]): { offset: string; color: string }[] {
   const last = hues.length - 1
   return hues.map((hue, i) => ({ offset: `${(i / last) * 100}%`, color: flowBandColor(hue) }))
@@ -142,35 +118,48 @@ function dominantCurrency(ledger: Ledger): Currency | null {
 }
 
 /**
- * Every occupied slot between slot `from` and slot `to` inclusive, in ring
- * order, coloured by whichever currency it is holding the most of right now:
- * what it released into the current, or failing that what it received from
- * it. A hole in between, and a slot presently carrying neither, contribute no
- * stop.
+ * The currency slot `index`'s outgoing current is mostly made of — index 7 is
+ * what leaves slot VIII for the mouth. Null where nothing is in flight there.
  */
-function pathHues(from: number, to: number, reports: Map<number, SlotReport>): number[] {
-  const span = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
+function carryingHue(carrying: Ledger[], index: number): number | null {
+  const currency = dominantCurrency(carrying[index] ?? {})
+  return currency ? currencyHue(currency) : null
+}
+
+/**
+ * One hue per slot from `from` to `to` inclusive. A slot holding nothing of
+ * its own carries the last known hue forward rather than breaking the
+ * gradient — by construction that can only be the arc's own endpoint.
+ */
+function carryingHues(carrying: Ledger[], from: number, to: number): number[] {
   const hues: number[] = []
-  for (let step = 0; step <= span; step++) {
-    const report = reports.get((from + step) % RING_SLOT_COUNT)
-    if (!report) continue
-    const currency = dominantCurrency(report.released) ?? dominantCurrency(report.received)
-    if (currency) hues.push(currencyHue(currency))
+  let last = 0
+  for (let index = from; index <= to; index++) {
+    const hue = carryingHue(carrying, index)
+    if (hue !== null) last = hue
+    hues.push(hue ?? last)
   }
   return hues
 }
 
 /**
- * A clockwise arc from one slot to another along the flow ring. The current only
- * ever runs clockwise, so the sweep flag is fixed; the long way round is taken
- * whenever the span passes a half turn.
- *
- * The gradient is still, not travelling: it runs once from whatever the slot
- * at the arc's start is holding most of to whatever the slot at its end is,
- * through everything standing between, so a crossing through a reagent
- * currently thick with heat and another thick with motion reads left to right
- * as one colour giving way to the other, live to this casting rather than
- * fixed to the catalog.
+ * The geometry of a clockwise arc from one slot to another along the flow
+ * ring. `to` may run past slot VIII (index 7) — index 8 is slot I one lap
+ * further round, which lets the closing arc describe the crossing over the
+ * mouth instead of a zero-length loop.
+ */
+function arcPath(from: number, to: number, radius: number): { path: string; start: Point; end: Point } {
+  const start = slotPoint(from, radius)
+  const end = slotPoint(to, radius)
+  const spanSlots = to - from
+  const largeArc = spanSlots * DEGREES_PER_SLOT > 180 ? 1 : 0
+  return { path: `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`, start, end }
+}
+
+/**
+ * The gradient runs once from whatever is leaving the arc's start slot to
+ * whatever is leaving its end slot, so a stretch thick with heat giving way
+ * to one thick with motion reads left to right as one colour fading to the other.
  */
 interface FlowArc {
   key: string
@@ -184,40 +173,83 @@ interface FlowArc {
   title: string
 }
 
-function buildFlowArc(
-  from: number,
-  to: number,
-  amounts: Map<Currency, number>,
-  reports: Map<number, SlotReport>,
-): FlowArc {
-  const currencies = CURRENCIES.filter((currency) => amounts.has(currency))
-  const start = slotPoint(from, FLOW_RADIUS)
-  const end = slotPoint(to, FLOW_RADIUS)
-  const spanSlots = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
-  const largeArc = spanSlots * DEGREES_PER_SLOT > 180 ? 1 : 0
-
-  const stops = flowStops(pathHues(from, to, reports))
+function buildFlowArc(from: number, to: number, carrying: Ledger[]): FlowArc {
+  const { path, start, end } = arcPath(from, to, FLOW_RADIUS)
+  const stops = flowStops(carryingHues(carrying, from, to))
+  const title = ledgerEntries(carrying[from] ?? {})
+    .map(([currency, amount]) => `${CURRENCY_META[currency].label} ${amount}`)
+    .join(', ')
 
   return {
     key: `${from}-${to}`,
-    path: `M ${start.x} ${start.y} A ${FLOW_RADIUS} ${FLOW_RADIUS} 0 ${largeArc} 1 ${end.x} ${end.y}`,
+    path,
     gradientId: `flow-grad-${from}-${to}`,
     x1: start.x,
     y1: start.y,
     x2: end.x,
     y2: end.y,
     stops,
-    title: currencies.map((currency) => `${CURRENCY_META[currency].label} ${amounts.get(currency)}`).join(', '),
+    title,
   }
 }
 
-/** A clockwise arc between two slots at a given radius — the flow ring's geometry, without a flow's gradient. */
-function ringArcPath(from: number, to: number, radius: number): string {
-  const start = slotPoint(from, radius)
-  const end = slotPoint(to, radius)
-  const spanSlots = (to - from + RING_SLOT_COUNT) % RING_SLOT_COUNT
-  const largeArc = spanSlots * DEGREES_PER_SLOT > 180 ? 1 : 0
-  return `M ${start.x} ${start.y} A ${radius} ${radius} 0 ${largeArc} 1 ${end.x} ${end.y}`
+/**
+ * The closing lap: whatever is still leaving slot VIII crosses the mouth to
+ * feed slot I before any of it manifests (`repay`, in the resolver). Drawn
+ * only when that crossing actually delivers something to slot I — otherwise
+ * what survives the mouth goes straight to the manifestation fan instead.
+ */
+function buildMouthArc(carrying: Ledger[], firstReceived: Ledger): FlowArc | null {
+  if (ledgerTotal(firstReceived) <= 0) return null
+  const mouth = RING_SLOT_COUNT - 1
+  const startHue = carryingHue(carrying, mouth)
+  if (startHue === null) return null
+  const endCurrency = dominantCurrency(firstReceived)
+  const endHue = endCurrency ? currencyHue(endCurrency) : startHue
+
+  const { path, start, end } = arcPath(mouth, RING_SLOT_COUNT, FLOW_RADIUS)
+  const title = ledgerEntries(firstReceived)
+    .map(([currency, amount]) => `${CURRENCY_META[currency].label} ${amount}`)
+    .join(', ')
+
+  return {
+    key: `${mouth}-${RING_SLOT_COUNT}`,
+    path,
+    gradientId: `flow-grad-${mouth}-${RING_SLOT_COUNT}`,
+    x1: start.x,
+    y1: start.y,
+    x2: end.x,
+    y2: end.y,
+    stops: flowStops([startHue, endHue]),
+    title,
+  }
+}
+
+/**
+ * Every contiguous stretch of the ring still carrying something, each as one
+ * arc from the slot it starts at to the slot it dies out at (or slot VIII, if
+ * it runs all the way to the mouth). More than one stretch is possible: current
+ * spent in full at a sink, or bled to nothing crossing a hole, does not revive
+ * at the next source further round, so the line breaks there. The closing lap
+ * (`buildMouthArc`) is always its own arc, never part of one of these runs.
+ */
+function buildFlowArcs(carrying: Ledger[], firstReceived: Ledger): FlowArc[] {
+  const arcs: FlowArc[] = []
+  let start: number | null = null
+  for (let segment = 0; segment < RING_SLOT_COUNT - 1; segment++) {
+    const flowing = ledgerTotal(carrying[segment] ?? {}) > 0
+    if (flowing && start === null) start = segment
+    if (!flowing && start !== null) {
+      arcs.push(buildFlowArc(start, segment, carrying))
+      start = null
+    }
+  }
+  if (start !== null) arcs.push(buildFlowArc(start, RING_SLOT_COUNT - 1, carrying))
+
+  const mouthArc = buildMouthArc(carrying, firstReceived)
+  if (mouthArc) arcs.push(mouthArc)
+
+  return arcs
 }
 
 interface ManifestLine {
@@ -233,34 +265,21 @@ interface ManifestLine {
 }
 
 /**
- * Slot VIII's own angle, not the mouth's: the current's carry line runs
- * clockwise and slot VIII is the last stop on it before the ring closes, so
- * this is where that line actually ends. The mouth is the seam half a slot
- * further on, which is where the ring's surplus crosses to leave, but that
- * point sits between two slots and nothing is ever drawn reaching it — using
- * it left every exit line appearing to start short of the flow it was meant
- * to continue.
+ * Slot VIII's own angle, not the mouth's — the mouth sits between two slots
+ * and nothing is ever drawn reaching it, which left exit lines looking cut
+ * short of the flow they were meant to continue.
  */
 const MANIFEST_ANGLE = -90 + (RING_SLOT_COUNT - 1) * DEGREES_PER_SLOT
 
-/**
- * One shared point for every manifesting currency's line, on the flow ring
- * directly under slot VIII. All of a ring's surplus leaves the same way, so
- * every line starts there and none anywhere else — fixed regardless of which
- * slots are filled, so a hole at slot VIII never strands a line at some
- * other point on the rim.
- */
+/** The one shared point every manifesting currency's line starts from, on the
+ * flow ring directly under slot VIII. */
 const MANIFEST_ORIGIN = radialPoint(MANIFEST_ANGLE, MANIFEST_INNER)
 
 /**
- * The current runs clockwise, so this is the direction it is travelling in
- * the instant it reaches `MANIFEST_ORIGIN` — tangent to the ring, not radial.
- * Every exit line's first control point sits out along this same heading, so
- * a line leaves the origin still moving the way the current was, the same
- * heading for all of them, and only bends outward toward its own after that.
- * Departing straight outward instead — radial from the first instant — met
- * the tangential current at a right angle, which is what read as a hard
- * corner rather than a line the current was still carrying.
+ * Direction the current is travelling the instant it reaches
+ * `MANIFEST_ORIGIN` — tangent to the ring, not radial. Every exit line
+ * departs on this heading before bending toward its own; departing radially
+ * instead met the tangential current at a right angle and read as a hard corner.
  */
 const MANIFEST_TANGENT = (() => {
   const rad = (MANIFEST_ANGLE * Math.PI) / 180
@@ -268,26 +287,18 @@ const MANIFEST_TANGENT = (() => {
 })()
 
 /**
- * Rotates the fan clockwise off slot VIII's own radial line, which is exactly
- * where its engraved name runs in view mode (`namePath`, centred on that same
- * angle). Without this the middle of the fan drew straight out over the
- * title; the tangent departure already carries every line toward the mouth,
- * this just gives that carry enough room to clear the name before the lines
- * bend back out to their own headings.
+ * Rotates the fan clockwise off slot VIII's own radial line, which is where
+ * its engraved name runs in view mode (`namePath`). Without this the middle
+ * of the fan drew straight out over the title.
  */
 const MANIFEST_HEADING_BIAS = 30
 
 /**
  * A curved line for one currency's manifestation, running out from
- * `MANIFEST_ORIGIN` — the one point every line shares, not a point of its
- * own. `fanIndex`/`fanCount` steer the heading each line ends on, away from
- * the ring; every line leaves the origin on `MANIFEST_TANGENT` and sweeps
- * toward that heading over its whole length rather than in one sharp turn,
- * which is what keeps the bend gentle instead of a corner. Length is the
- * only channel amount is drawn on, matching `.circle__flow`, which holds
- * width fixed for the same reason: the number is on the tooltip and in the
- * panel, and two encodings of the same amount would only disagree with each
- * other under rounding.
+ * `MANIFEST_ORIGIN`. Leaves on `MANIFEST_TANGENT` and sweeps toward its own
+ * fan heading over its whole length, which keeps the bend gentle instead of a
+ * corner. Length is the only channel amount is drawn on — the number itself
+ * is on the tooltip and in the panel.
  */
 function manifestLinePath(fanIndex: number, fanCount: number, amount: number): { path: string; end: Point } {
   const spread = (fanCount - 1) * MANIFEST_FAN_STEP
@@ -340,21 +351,15 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     [draft.form, placements],
   )
 
-  /**
-   * How each slot resolved, keyed by slot. The card marks the starved ones and
-   * explains them on hover, and both need more than the shortfall to do it: what
-   * arrived, and whether the yield was cut or the caster billed.
-   */
+  /** How each slot resolved, keyed by slot. */
   const reports = useMemo(() => {
     const map = new Map<number, SlotReport>()
     for (const slot of reaction.slots) map.set(slot.slotIndex, slot)
     return map
   }, [reaction.slots])
 
-  /**
-   * The names to engrave on the rim: every slot that has something standing in
-   * it, in view mode only. In edit mode the card carries its own name.
-   */
+  /** The names to engrave on the rim, view mode only — in edit mode the card
+   * carries its own name. */
   const rimNames = useMemo(() => {
     if (mode !== 'view') return []
     return draft.slots.flatMap((id, index) => {
@@ -363,50 +368,19 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     })
   }, [mode, draft.slots, componentsById])
 
-  /**
-   * A transfer whose ends coincide went the whole way round the ring, which has
-   * no arc to draw; the numbers still show it in the panel.
-   *
-   * Several currencies routinely cross the same pair of slots, and each one
-   * used to get its own dashed arc, offset in phase so the dashes interleaved
-   * into a braid. That braid is gone: every pair of slots now draws exactly
-   * one arc, its gradient built from what each slot along it is actually
-   * holding most of, per `reports` above, rather than from the currencies
-   * riding between the endpoints. See `buildFlowArc`.
-   */
-  const flows = useMemo<FlowArc[]>(() => {
-    const drawn = reaction.transfers.filter((transfer) => transfer.from !== transfer.to)
-    const byPair = new Map<string, { from: number; to: number; amounts: Map<Currency, number> }>()
-    for (const transfer of drawn) {
-      const key = `${transfer.from}-${transfer.to}`
-      let entry = byPair.get(key)
-      if (!entry) {
-        entry = { from: transfer.from, to: transfer.to, amounts: new Map() }
-        byPair.set(key, entry)
-      }
-      entry.amounts.set(transfer.currency, (entry.amounts.get(transfer.currency) ?? 0) + transfer.amount)
-    }
-    return Array.from(byPair.values()).map(({ from, to, amounts }) => buildFlowArc(from, to, amounts, reports))
-  }, [reaction.transfers, reports])
-
-  /** The last slot holding a reagent, in ring order — where the ring's own current actually ends. -1 for a cold circle. */
-  const lastSlot = useMemo(
-    () => placements.reduce((max, p) => Math.max(max, p.slotIndex), -1),
-    [placements],
+  /** The ring drawn as however many unbroken stretches still carry current,
+   * plus the closing crossing over the mouth. See `buildFlowArcs`. */
+  const flows = useMemo<FlowArc[]>(
+    () => buildFlowArcs(reaction.carrying, reports.get(0)?.received ?? {}),
+    [reaction.carrying, reports],
   )
 
-  /**
-   * Whichever currency the last node is carrying most of, the same call the
-   * flow arcs' own gradients make (`pathHues`). The exit line for that
-   * currency is painted last, so wherever the lines overlap, the one on top
-   * is never a colour the current standing right there was not actually
-   * carrying.
-   */
-  const lastNodeCurrency = useMemo(() => {
-    const report = lastSlot >= 0 ? reports.get(lastSlot) : undefined
-    if (!report) return null
-    return dominantCurrency(report.released) ?? dominantCurrency(report.received)
-  }, [lastSlot, reports])
+  /** Whichever currency is leaving slot VIII for the mouth — its exit line is
+   * painted last so overlaps never hide the colour actually in flight there. */
+  const mouthCurrency = useMemo(
+    () => dominantCurrency(reaction.carrying[RING_SLOT_COUNT - 1] ?? {}),
+    [reaction.carrying],
+  )
 
   /** What the ring gave up, drawn leaving through the mouth. See `manifestLinePath`. */
   const manifestLines = useMemo<ManifestLine[]>(() => {
@@ -427,35 +401,12 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     })
   }, [reaction.manifestation])
 
-  /**
-   * `manifestLines` in paint order rather than fan order: the same lines, the
-   * same headings, just with the last node's own currency moved to the end
-   * so it renders on top. Kept separate from `manifestLines` itself so which
-   * currency happens to be on top this casting never shuffles the fan's
-   * layout, which is fixed to `CURRENCIES` order regardless.
-   */
+  /** `manifestLines` in paint order: the mouth's own currency moved to the
+   * end so it renders on top. Kept separate so the fan layout stays fixed. */
   const manifestPaintOrder = useMemo(
-    () => [...manifestLines].sort((a, b) => Number(a.currency === lastNodeCurrency) - Number(b.currency === lastNodeCurrency)),
-    [manifestLines, lastNodeCurrency],
+    () => [...manifestLines].sort((a, b) => Number(a.currency === mouthCurrency) - Number(b.currency === mouthCurrency)),
+    [manifestLines, mouthCurrency],
   )
-
-  /**
-   * The exit lines always start at slot VIII, but the ring's own current does
-   * not always reach that far — a reagent at slot V with nothing placed past
-   * it leaves nothing drawn between there and the mouth. This carries the
-   * flow ring on from the last occupied slot to slot VIII at the same radius,
-   * in the last node's own colour (see `lastNodeCurrency`), so the exit lines
-   * still read as leaving that current rather than sprouting from an empty
-   * stretch of rim. Drawn under the same class as an ordinary flow arc, since
-   * it is standing in for one.
-   */
-  const manifestBridge = useMemo(() => {
-    if (manifestLines.length === 0) return null
-    if (lastSlot < 0 || lastSlot >= RING_SLOT_COUNT - 1) return null
-    const fallback = manifestLines.reduce((best, line) => (line.amount > best.amount ? line : best))
-    const color = lastNodeCurrency ? flowBandColor(currencyHue(lastNodeCurrency)) : fallback.color
-    return { path: ringArcPath(lastSlot, RING_SLOT_COUNT - 1, FLOW_RADIUS), color }
-  }, [manifestLines, lastSlot, lastNodeCurrency])
 
   return (
     <div className={`circle${mode === 'view' ? ' circle--view' : ''}`}>
@@ -483,11 +434,8 @@ export function SpellCircle({ children }: { children: ReactNode }) {
           y2={radialPoint(MOUTH_ANGLE, MOUTH_OUTER).y}
         />
 
-        {/*
-          The rim inscription. The whole engraving is `aria-hidden`, which is what
-          keeps this from reading every name twice: each token already carries its
-          reagent's name in its own `aria-label`.
-        */}
+        {/* The whole engraving is `aria-hidden` — each token already carries its
+            reagent's name in its own `aria-label`, so this doesn't double up. */}
         {rimNames.length > 0 && (
           <>
             <defs>
@@ -530,10 +478,6 @@ export function SpellCircle({ children }: { children: ReactNode }) {
             <title>{flow.title}</title>
           </path>
         ))}
-
-        {manifestBridge && (
-          <path className="circle__flow" d={manifestBridge.path} stroke={manifestBridge.color} />
-        )}
 
         {manifestLines.length > 0 && (
           <defs>

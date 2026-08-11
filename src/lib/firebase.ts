@@ -32,8 +32,7 @@ const app = initializeApp({
 
 export const auth = getAuth(app)
 
-// The IndexedDB cache keeps the workshop readable and writable offline — the one thing
-// localStorage did well — and syncs when the connection returns.
+// Keeps the workshop readable and writable offline, syncing when the connection returns.
 export const db = initializeFirestore(app, {
   localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
 })

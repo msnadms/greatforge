@@ -63,13 +63,11 @@ function LedgerReadout({ ledger, describe }: { ledger: Ledger; describe: 'vent' 
 export function ReactionPanel() {
   const { reaction } = useWorkshop()
   // The form the numbers below were resolved under, not the one the picker is
-  // showing, so the prose and the totals beside it can never describe different
-  // castings.
+  // currently showing.
   const form = FORM_META[reaction.form]
   const shortSlots = reaction.slots.filter((slot) => ledgerEntries(slot.shortfall).length > 0)
-  // Under a measuring form these are the slots that gave back less than their
-  // yield instead of billing the caster. They are the whole cost of the casting, so
-  // a zero toll must not be reported as a circle that fed itself when it did not.
+  // Under a measuring form, slots that gave back less than their yield instead
+  // of billing the caster — a zero toll must not read as a ring that fed itself.
   const stintedSlots = reaction.slots.filter((slot) => slot.measured)
   const verdict =
     reaction.conditionMet === null ? 'cold' : reaction.conditionMet ? 'met' : 'unmet'
@@ -78,14 +76,9 @@ export function ReactionPanel() {
     <section className="panel reaction">
       <h2 className="panel__title">The reaction</h2>
 
-      {/* The form is an input, so what it does is stated here in full. Two of the
-          three sentences are hover text: the form is named, the underfed setting is
-          named, and hovering either gives the prose behind the name. The condition
-          stays on the page because it is a verdict on the ring as placed rather than
-          a description, and it changes as reagents move.
-
-          Everything is read from `FORM_META`, so the panel cannot describe a rule
-          the resolver is not applying. */}
+      {/* The form's name and underfed setting are named with the prose behind them
+          as hover text; the condition stays on the page since it's a verdict on
+          the ring as placed and changes as reagents move. */}
       <div className="reaction__form">
         <p className="reaction__formLine">
           Spoken as {form.article}{' '}
@@ -97,10 +90,7 @@ export function ReactionPanel() {
         </p>
 
         {form.condition ? (
-          /* One verdict drives the heading, the border and the cost. A form that
-             states a condition reports `null` only for a cold circle, which is
-             neither met nor failed: it is shown the rule it will be judged against
-             and no forfeit, because none is in force yet. */
+          // `null` only for a cold circle, which is neither met nor failed.
           <div className={`reaction__condition reaction__condition--${verdict}`}>
             <p className="reaction__conditionHead">{CONDITION_HEAD[verdict]}</p>
             <p className="reaction__conditionText">{form.condition.statement}</p>

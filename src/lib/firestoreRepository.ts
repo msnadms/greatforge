@@ -12,12 +12,7 @@ import {
 } from 'firebase/firestore'
 import { isInert } from '../data/currencies'
 import { buildSeedComponents } from '../data/seedComponents'
-import {
-  normalizeComponent,
-  normalizeSpell,
-  type MaterialComponent,
-  type Spell,
-} from '../types/worldbuilding'
+import { normalizeComponent, normalizeSpell, type MaterialComponent, type Spell } from '../types/worldbuilding'
 import { db, requireUid } from './firebase'
 import { newId } from './id'
 import type { WorkshopRepository } from './repository'
@@ -34,30 +29,11 @@ import type { WorkshopRepository } from './repository'
  */
 
 /**
- * Bumped whenever the starter catalog changes shape. A user below this version
- * gets the current catalog installed alongside whatever they already have —
- * never over it, so nothing they authored or edited is lost. Version 1 was the
- * domain/potency catalog; version 2 is the stoichiometric one; version 3 is the
- * balanced catalog — every currency sized into one band so none is erased by
- * transit, and no sinks, which could only ever lower what leaves the ring.
- * Version 4 was tuned against flat transit and stocked the six relays, with sinks
- * still authorable and not shipped. Version 5 adds the two sinks, which forms made
- * necessary: a dirge is spared the spill only while a sink stands in the ring, and
- * with none in the catalog that condition could not be met without the user
- * authoring one first. Version 6 makes rarity a power signal — common for anything
- * a ring can be built from, uncommon for solid but unremarkable, rare for the five
- * converters that are the only reliable route into mass, charge and the way back
- * to light and motion — and renames the light-to-heat converter to Bone Black,
- * since it shared a name with the light sink. Version 7 adds a sixth `rare`
- * converter (Light Mill), the `uncommon` converter it inverts (Quartz Anvil,
- * motion to light), and the catalog's first two `singular` reagents (Tungsten
- * Foil, Quartz Filament), each doing at one slot what two `rare` reagents do
- * together. Version 8 gives rarity a fourth source (Pitchblende) and a
- * fifth fuel (Flywheel), so `rare` is no longer only converters, and
- * drops Frankincense back to `uncommon` to hold the tier's converter count at
- * five now that it spans more than one role.
+ * Bumped whenever the starter catalog changes shape, so existing users get the
+ * new catalog installed alongside whatever they already have — never over it,
+ * so nothing they authored or edited is lost.
  */
-const SEED_VERSION = 8
+const SEED_VERSION = 10
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>
@@ -71,19 +47,16 @@ function stripId<T extends { id: string }>(entity: T): Omit<T, 'id'> {
 }
 
 /**
- * Guards against hand-edited records and against components written before the
- * ledger model. The latter come back with two empty ledgers, which is exactly what
- * `pruneInert` looks for on the way out.
+ * Normalizes a stored record. A component written before the ledger model comes
+ * back with two empty ledgers, which is what `pruneInert` looks for on the way out.
  */
 function toComponent(snapshot: QueryDocumentSnapshot<DocumentData>): MaterialComponent {
   return normalizeComponent({ ...(snapshot.data() as Partial<StoredComponent>), id: snapshot.id })
 }
 
 /**
- * Guards against older or hand-edited records missing newer fields. Every field
- * goes through `normalizeSpell`, not just the slots: `form` indexes `FORM_META`
- * straight from the render path, so a spell carrying one this build does not know
- * about would take the whole workshop down instead of opening as a prayer.
+ * Normalizes a stored spell. `form` indexes `FORM_META` straight from the render
+ * path, so an unnormalized value this build doesn't know would crash the workshop.
  */
 function toSpell(snapshot: QueryDocumentSnapshot<DocumentData>): Spell {
   return normalizeSpell({ ...(snapshot.data() as Partial<StoredSpell>), id: snapshot.id })
@@ -97,6 +70,10 @@ function installedVersion(profile: DocumentData): number {
 }
 
 export class FirestoreWorkshopRepository implements WorkshopRepository {
+  private profileRef(uid: string) {
+    return doc(db, 'users', uid)
+  }
+
   private components(uid: string): CollectionReference<DocumentData> {
     return collection(db, 'users', uid, 'components')
   }
@@ -108,9 +85,9 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
   private inFlight: Promise<MaterialComponent[]> | null = null
 
   /**
-   * Concurrent loads share one round trip. Without this, React's StrictMode fires the
-   * load effect twice on mount and both calls race to seed — correct, because the claim
-   * below is transactional, but it costs a wasted transaction and logs its contention.
+   * Concurrent loads share one round trip. Without this, StrictMode's doubled mount
+   * effect races two calls into seeding at once — correct since the claim below is
+   * transactional, but a wasted transaction and log noise.
    */
   listComponents(): Promise<MaterialComponent[]> {
     if (this.inFlight) return this.inFlight
@@ -129,18 +106,15 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
     if (seeded) return this.pruneInert(uid, [...existing, ...seeded])
     if (existing.length > 0) return this.pruneInert(uid, existing)
 
-    // The codex is empty and this call did not write it, so either someone else just
-    // seeded — React's StrictMode runs the load effect twice — or the user has deleted
-    // every component. Re-read to find out which.
+    // Empty and this call didn't write it: either StrictMode's other effect just
+    // seeded, or the user deleted every component. Re-read to find out which.
     return this.pruneInert(uid, (await getDocs(this.components(uid))).docs.map(toComponent))
   }
 
   /**
    * Deletes components with two empty ledgers, which the reaction cannot tell from an
-   * empty slot. These can only be leftovers from the domain/potency model, which had no
-   * ledgers to read: nothing since can save one. Runs on every load rather than being
-   * tied to a seed version, so it is idempotent and costs a write only when it finds
-   * something.
+   * empty slot — leftovers the editor can no longer produce. Runs on every load rather
+   * than a seed version so it stays idempotent.
    */
   private async pruneInert(
     uid: string,
@@ -156,17 +130,12 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
   }
 
   /**
-   * Installs the starter catalog once per seed version, so deleting seeds sticks until
-   * the catalog itself changes. The version marker is claimed inside a transaction, so
-   * concurrent loads — two tabs, or StrictMode's doubled effect — can't both write it.
-   *
-   * Existing components are never touched: a user coming from an older version keeps
-   * everything they had and gains the new catalog beside it.
-   *
-   * Returns the seeds this call wrote, or null if there was nothing to install.
+   * Installs the starter catalog once per seed version. The version marker is claimed
+   * inside a transaction, so concurrent loads — two tabs, or StrictMode's doubled
+   * effect — can't both write it. Returns the seeds written, or null if none were.
    */
   private async seedComponents(uid: string): Promise<MaterialComponent[] | null> {
-    const profileRef = doc(db, 'users', uid)
+    const profileRef = this.profileRef(uid)
 
     return runTransaction(db, async (transaction) => {
       const profile = await transaction.get(profileRef)
@@ -185,13 +154,7 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
     })
   }
 
-  /**
-   * Normalized on the way out as well as on the way in. The editor already cleans
-   * what it collects, but the invariant belongs to the seam rather than to one
-   * caller: anything else that ever writes a component — an importer, the conlang
-   * module reusing this repository — would otherwise put zero entries, fractions
-   * or out-of-range amounts straight into Firestore.
-   */
+  /** Normalized on write too, so any future caller of this seam can't write bad ledgers. */
   async saveComponent(component: MaterialComponent): Promise<void> {
     const uid = requireUid()
     await setDoc(doc(this.components(uid), component.id), stripId(normalizeComponent(component)))

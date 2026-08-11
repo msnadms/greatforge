@@ -3,7 +3,13 @@ import { firestoreRepository } from '../lib/firestoreRepository'
 import { newId } from '../lib/id'
 import type { WorkshopRepository } from '../lib/repository'
 import { computeReaction, resolvePlacements } from '../lib/reaction'
-import { emptySlots, type MaterialComponent, type Spell } from '../types/worldbuilding'
+import { describeRole } from '../data/currencies'
+import {
+  DEFAULT_CASTER_LEVEL,
+  emptySlots,
+  type MaterialComponent,
+  type Spell,
+} from '../types/worldbuilding'
 import {
   WorkshopContext,
   type BenchMode,
@@ -17,6 +23,7 @@ function blankSpell(): Spell {
     id: newId(),
     title: '',
     form: 'prayer',
+    casterLevel: DEFAULT_CASTER_LEVEL,
     text: '',
     notes: '',
     slots: emptySlots(),
@@ -53,8 +60,7 @@ export function WorkshopProvider({
   const [spells, setSpells] = useState<Spell[]>([])
   const [draft, setDraft] = useState<Spell>(blankSpell)
   const [dirty, setDirty] = useState(false)
-  // A blank bench is the workbench: there is nothing to read yet. Only an
-  // inscribed working opens in `view`.
+  // A blank bench has nothing to read yet; only an inscribed working opens in `view`.
   const [mode, setMode] = useState<BenchMode>('edit')
   const [armedComponentId, setArmedComponentId] = useState<string | null>(null)
 
@@ -83,10 +89,7 @@ export function WorkshopProvider({
 
   const dismissError = useCallback(() => setError(null), [])
 
-  /**
-   * Runs a persisted change, applying local state only once the write lands. Call sites
-   * fire these with `void`, so a rejection here would otherwise go unreported.
-   */
+  /** Applies local state only once a persisted write lands; failures surface via `error`. */
   const write = useCallback(async (label: string, action: () => Promise<void>) => {
     try {
       await action()
@@ -108,17 +111,18 @@ export function WorkshopProvider({
     [draft.slots, componentsById],
   )
 
-  // The form is an input: it decides what an underfed reagent does and whether the
-  // circle met the condition the form states, so changing the picker re-resolves
-  // the whole ring. See `data/spellForms.ts`.
-  const reaction = useMemo(() => computeReaction(placements, draft.form), [placements, draft.form])
+  // Form and caster level are both inputs to the resolver, so changing either
+  // re-resolves the whole ring. See `data/spellForms.ts` and the eighth law.
+  const reaction = useMemo(
+    () => computeReaction(placements, draft.form, draft.casterLevel),
+    [placements, draft.form, draft.casterLevel],
+  )
 
   /**
-   * Every change to the working funnels through here and `updateDraft`, and both
-   * refuse to touch a working being viewed. The components hide their own
-   * affordances in view mode, but a drop can still be released over the circle
-   * from a pointer press that began before the mode changed, so the refusal lives
-   * at the state rather than only in the markup.
+   * Every change to the working funnels through here and `updateDraft`, both of
+   * which refuse to touch a working being viewed. Components hide their own
+   * affordances in view mode, but a drop can still land from a pointer press that
+   * began before the mode changed, so the refusal lives in state, not just markup.
    */
   const patchSlots = useCallback(
     (mutate: (slots: (string | null)[]) => void) => {
@@ -136,17 +140,29 @@ export function WorkshopProvider({
   const placeComponent = useCallback(
     (slotIndex: number, componentId: string) => {
       patchSlots((slots) => {
-        // A circle admits each material once, so setting a reagent down lifts it
-        // from wherever else it was standing rather than duplicating it. Without
-        // this the strongest ring is always eight of whatever yields most, and
-        // every other material in the codex is dead weight.
+        // A circle admits each material once: lift it from wherever else it stood
+        // rather than duplicate it, or the strongest ring is eight of one reagent.
         const held = slots.indexOf(componentId)
         if (held !== -1) slots[held] = null
+
+        // A circle admits one source too: a source demands nothing, so stacking
+        // them only ever adds free current. Placing a second bumps the first back
+        // to the tray, the same way an occupied slot already gets displaced.
+        const incoming = componentsById.get(componentId)
+        if (incoming && describeRole(incoming) === 'source') {
+          for (let i = 0; i < slots.length; i++) {
+            if (i === slotIndex) continue
+            const occupantId = slots[i]
+            const occupant = occupantId ? componentsById.get(occupantId) : undefined
+            if (occupant && describeRole(occupant) === 'source') slots[i] = null
+          }
+        }
+
         slots[slotIndex] = componentId
       })
       setArmedComponentId(null)
     },
-    [patchSlots],
+    [patchSlots, componentsById],
   )
 
   const clearSlot = useCallback(
@@ -198,8 +214,6 @@ export function WorkshopProvider({
     setDraft(saved)
     setDirty(false)
     // Inscribing finishes the working, so the bench falls back to reading it.
-    // That also gives the round trip an obvious close: a spell opens in view,
-    // Edit opens it, Inscribe returns it to the page it came from.
     setMode('view')
     setArmedComponentId(null)
   }, [draft, repository, write])
@@ -245,9 +259,8 @@ export function WorkshopProvider({
       const existing = id ? componentsById.get(id) : undefined
       const component: MaterialComponent = {
         ...input,
-        // An edit keeps the id it was opened with even if the component has since
-        // gone from local state. Falling back to a fresh id here would silently
-        // fork the record into a duplicate instead of saving over the original.
+        // Keeps the id it was opened with; falling back to a fresh one would fork
+        // the record into a duplicate instead of saving over the original.
         id: id ?? newId(),
         isSeed: existing?.isSeed ?? false,
         createdAt: existing?.createdAt ?? now,
@@ -281,10 +294,9 @@ export function WorkshopProvider({
       setComponents((current) => current.filter((component) => component.id !== id))
       setArmedComponentId((current) => (current === id ? null : current))
 
-      // Clear the deleted component out of the draft rather than leaving a dangling id.
-      // That is a real edit to the working on the bench, so it marks it unsaved: the
-      // bench now differs from the inscribed spell, and without this it would read
-      // "Saved" and let the user leave for another working without a warning.
+      // Clearing the deleted component out of the draft is a real edit, so it
+      // marks the draft dirty rather than leaving it reading "Saved" over a
+      // dangling reference.
       if (draft.slots.includes(id)) {
         setDraft((current) => ({
           ...current,
@@ -292,9 +304,6 @@ export function WorkshopProvider({
         }))
         setDirty(true)
       }
-
-      // Saved spells keep their reference until re-saved; resolvePlacements skips
-      // dangling ids, so they simply render as empty slots.
     },
     [draft.slots, repository, write],
   )

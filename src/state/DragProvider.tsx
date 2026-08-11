@@ -31,10 +31,7 @@ function slotUnder(x: number, y: number): number | null {
   return Number.isInteger(index) ? index : null
 }
 
-/**
- * A drag ends with a click event on the source. Swallow that one click so
- * dropping a component doesn't also arm it or clear the slot it came from.
- */
+/** A drag ends with a click event on the source; swallow it so a drop doesn't also arm it. */
 function swallowNextClick(): void {
   const swallow = (event: MouseEvent) => {
     event.stopPropagation()
@@ -45,21 +42,15 @@ function swallowNextClick(): void {
 }
 
 /**
- * Pointer-driven dragging. The native HTML5 drag image is a translucent
- * screenshot that lags the cursor, so components are dragged with pointer
- * events instead and the card itself is rendered under the cursor by DragLayer.
+ * Pointer-driven dragging — native HTML5 drag's translucent image lags the
+ * cursor, so DragLayer renders the carried card under the cursor instead.
  */
 export function DragProvider({ children }: { children: ReactNode }) {
   const { placeComponent, moveSlot } = useWorkshop()
   const [preview, setPreview] = useState<DragPreview | null>(null)
   const dragRef = useRef<InternalDrag | null>(null)
 
-  /**
-   * Detaches whatever the drag in progress attached. A drag lives on window
-   * listeners rather than on this component, so unmounting mid-drag — signing out
-   * with a reagent in hand — would otherwise leave them bound and let the drop call
-   * into a workshop that is no longer mounted.
-   */
+  /** Detaches window listeners on unmount, so a drag in progress can't outlive it. */
   const teardownRef = useRef<(() => void) | null>(null)
   useEffect(() => () => teardownRef.current?.(), [])
 

@@ -11,17 +11,17 @@ const NAME_PREFIXES: Record<SpellForm, string[]> = {
   elegy: ['Elegy for', 'Lament for', 'In Memory of'],
   litany: ['Litany of', 'Litany by', 'Chant of'],
   dirge: ['Dirge for', 'Dirge of', 'Grave-Song for'],
-  invocation: ['Invocation of', 'Call of', 'True Name of'],
+  invocation: ['Invocation of', 'Call of', 'Deliverance by'],
   ward: ['Ward of', 'Wall of', 'Sentry of'],
   benediction: ['Benediction of', 'Blessing of', 'Farewell to'],
 }
 
 /** What the ring is naming, drawn from whichever currency it manifests most of. */
 const NAME_NOUNS: Record<Currency, string[]> = {
-  heat: ['Ember', 'the Kiln', 'the Furnace', 'Coal', 'Scorch'],
+  heat: ['Ember', 'the Kiln', 'the Furnace', 'Coal', 'the Scorched'],
   motion: ['the Gale', 'the Tide', 'Reeling', 'the Undertow', 'Recoil'],
-  charge: ['Spark', 'Arc', 'Struck Flint', 'the Storm-Glass', 'Lightning'],
-  light: ['the Dawn', 'Lantern', 'the Beacon', 'the Afterimage', 'Glow'],
+  charge: ['Spark', 'the Arc', 'Struck Flint', 'the Storm', 'Lightning'],
+  light: ['the Dawn', 'the Lantern', 'the Beacon', 'the Afterimage', 'Glow'],
   mass: ['Stone', 'Weight', 'Ash', 'Anchor', 'the Deep'],
 }
 
@@ -32,20 +32,37 @@ function pick<T>(list: T[]): T {
   return list[Math.floor(Math.random() * list.length)]
 }
 
-/** The currency the ring manifests most of, ties broken toward `CURRENCIES` order. */
-function loudestCurrency(manifestation: Ledger): Currency | null {
-  const entries = ledgerEntries(manifestation)
-  if (entries.length === 0) return null
-  return entries.reduce((loudest, entry) => (entry[1] > loudest[1] ? entry : loudest))[0]
+/**
+ * The two loudest currencies in the manifestation, ties broken toward
+ * `CURRENCIES` order. `Array.prototype.sort` is stable, and `ledgerEntries`
+ * already hands back entries in `CURRENCIES` order, so a tie keeps that order
+ * without any extra comparison.
+ */
+function loudestCurrencies(manifestation: Ledger): Array<[Currency, number]> {
+  return [...ledgerEntries(manifestation)].sort((a, b) => b[1] - a[1])
 }
+
+/** How close a second currency has to sit behind the loudest to earn a joint name. */
+const PAIR_THRESHOLD = 5
 
 /**
  * A random title for the working on the bench: a prefix for the form paired
  * with a noun for whichever currency the ring currently manifests most of. A
  * ring manifesting nothing draws from `UNMANIFESTED_NOUNS` instead.
+ *
+ * When a second currency comes in within `PAIR_THRESHOLD` of the loudest, the
+ * ring isn't really about one thing more than the other, so half the time the
+ * name says both: "Prayer for Ember and Spark" instead of "Prayer for Ember".
  */
 export function generateSpellName(form: SpellForm, manifestation: Ledger): string {
-  const currency = loudestCurrency(manifestation)
-  const noun = currency ? pick(NAME_NOUNS[currency]) : pick(UNMANIFESTED_NOUNS)
-  return `${pick(NAME_PREFIXES[form])} ${noun}`
+  const prefix = pick(NAME_PREFIXES[form])
+  const [loudest, runnerUp] = loudestCurrencies(manifestation)
+  if (!loudest) return `${prefix} ${pick(UNMANIFESTED_NOUNS)}`
+
+  const noun = pick(NAME_NOUNS[loudest[0]])
+  const isPair = runnerUp && loudest[1] - runnerUp[1] <= PAIR_THRESHOLD && Math.random() < 0.5
+  if (!isPair) return `${prefix} ${noun}`
+
+  const secondNoun = pick(NAME_NOUNS[runnerUp[0]])
+  return `${prefix} ${noun} and ${secondNoun}`
 }

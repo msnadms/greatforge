@@ -1,16 +1,19 @@
 import { isRelay } from '../data/currencies'
-import { FORM_META, conditionRelief } from '../data/spellForms'
+import { FORM_META, conditionRelief, type ConditionContext } from '../data/spellForms'
 import {
+  LEVEL_POWER,
   RING_SLOT_COUNT,
   TRANSIT_LOSS_GAP,
   TRANSIT_LOSS_RELAY,
   TRANSIT_LOSS_REAGENT,
+  TRANSIT_POWER,
   addToLedger,
   completionFactor,
   ledgerEntries,
   ledgerTotal,
   normalizeLedger,
   transitScale,
+  type CasterLevel,
   type Currency,
   type Ledger,
   type MaterialComponent,
@@ -18,15 +21,28 @@ import {
   type SpellForm,
 } from '../types/worldbuilding'
 
-/** Current that reached one slot from another. Drawn as an arc along the ring. */
-export interface Transfer {
-  currency: Currency
-  /** Slot that released it. */
-  from: number
-  /** Slot that consumed it. */
-  to: number
-  /** Amount that arrived, after transit loss. */
-  amount: number
+/** Scales a ledger's amounts by `LEVEL_POWER[level]`, dropping anything that rounds to zero. */
+function scaleLedger(ledger: Ledger, level: CasterLevel, round: (n: number) => number): Ledger {
+  const normalized = normalizeLedger(ledger)
+  const power = LEVEL_POWER[level]
+  if (power >= 1) return normalized
+  const scaled: Ledger = {}
+  for (const [currency, amount] of ledgerEntries(normalized)) {
+    const next = round(amount * power)
+    if (next > 0) scaled[currency] = next
+  }
+  return scaled
+}
+
+/**
+ * A ledger as a caster at this level can actually command it: normalized, then
+ * demand and yield scaled by `LEVEL_POWER[level]` to the nearest unit. Exported
+ * (not just used internally by `computeReaction`) because `ComponentTray`,
+ * `ComponentSlot` and `DragLayer` need the same scaled numbers to show a
+ * reagent card truthfully at the caster's current level.
+ */
+export function ledgerForCaster(ledger: Ledger, level: CasterLevel): Ledger {
+  return scaleLedger(ledger, level, Math.round)
 }
 
 export interface SlotReport {
@@ -67,7 +83,14 @@ export interface Reaction {
   completion: number
   /** Reports for filled slots only, in slot order. */
   slots: SlotReport[]
-  transfers: Transfer[]
+  /**
+   * What is still in flight leaving slot `i` toward slot `i + 1` — index 7 is
+   * what leaves slot VIII for the mouth. Recorded regardless of whether slot
+   * `i` is a hole, a starved reagent or a sink, since those change what a slot
+   * keeps but never what still travels past it. `SpellCircle` draws its flow
+   * arcs from this.
+   */
+  carrying: Ledger[]
   /** Surplus that escaped the ring — what the spell actually does. */
   manifestation: Ledger
   /**
@@ -85,32 +108,29 @@ export interface Reaction {
 /** Current in flight between slots, decaying as it goes. */
 interface Parcel {
   currency: Currency
-  /** Slot that released it, for attributing transfers. */
-  from: number
   amount: number
   /**
-   * Fractional share of the proportional fallback (see `spendProportional`) that
-   * this parcel owed on some past crossing but wasn't actually charged, because
-   * the toll is whole units and this parcel's exact share of it rounded below
-   * one. Carried forward rather than discarded, so a parcel too small to ever
-   * clear a single crossing's rounding on its own still pays its share once
-   * enough small crossings have accumulated — the same reason a small balance
-   * left off a bill one month is still owed the next.
+   * Fractional share owed from a past proportional crossing (see
+   * `spendProportional`) that rounded below one whole unit. Carried forward so
+   * it accumulates and is eventually charged rather than dropped.
    */
   debt: number
 }
 
+// `conditionRelief` short-circuits on an empty ring before it ever reaches a
+// condition's `test`, so this is never actually asked anything — it exists
+// only because the parameter is required.
+const NO_PLACEMENTS_CONTEXT: ConditionContext = { fedUnderBaseline: () => false }
+
 function emptyReaction(form: SpellForm): Reaction {
   return {
     form,
-    // Asked rather than restated: `conditionRelief` owns what a cold circle counts
-    // as, and it answers `null` for one — no reagent has been placed, so there is
-    // no verdict to give and nothing has been spared or doubled.
-    conditionMet: conditionRelief(form, []).met,
+    // A cold circle has no verdict: `conditionRelief` returns null for it.
+    conditionMet: conditionRelief(form, [], NO_PLACEMENTS_CONTEXT).met,
     filled: 0,
     completion: 0,
     slots: [],
-    transfers: [],
+    carrying: [],
     manifestation: {},
     toll: {},
     bled: {},
@@ -121,82 +141,107 @@ function emptyReaction(form: SpellForm): Reaction {
 }
 
 /**
- * Walks the ring once clockwise from slot I and closes it, resolving every
- * demand against the current in flight.
+ * Builds what `conditionRelief` needs to answer a condition that reads the
+ * ring's resolved state — currently only the dirge's. Resolves under the
+ * prayer as a baseline (see `ConditionContext` in `data/spellForms.ts`), and
+ * only on first use, since most forms' conditions never touch it.
  *
- * Pure — no React, no storage. The rules it implements are the laws in
- * `data/currencies.ts`, and they are the whole magic system:
- *
- *  - A slot's demands are drawn from current released *upstream* of it, oldest
- *    parcel first, so the current that has travelled furthest is spent before it
- *    decays away entirely.
- *  - Crossing into a slot dissipates a flat amount of whatever is in flight — two
- *    units to leap a gap, one across a reagent, nothing through a relay. One or two
- *    units in total, not per currency and not per parcel, so the price of a lap is
- *    the length of the walk and the number of holes in it, and never the number of
- *    currencies the ring happens to be carrying. It is charged to the current the
- *    slot ahead asked for, and only what that cannot cover is spread across
- *    everything else still in flight, in proportion to what each parcel carries.
- *  - Under a crediting form a slot releases its whole yield whether or not the ring
- *    met its demands, and the difference comes out of the caster. Under a measuring
- *    form it releases the share of that yield the ring fed it, and nothing is
- *    charged to anyone. Neither rule has an exception for relays — a relay is an
- *    ordinary reagent that happens to be free to cross, and it is asked, billed and
- *    counted like any other.
- *  - Slot I fires before anything can feed it, so its shortfall is provisional:
- *    closing the ring gives it one chance to be repaid by what came round.
- *  - Whatever is still in flight when the ring closes leaves it. That is the
- *    manifestation.
- *  - Unmet demand is the only thing the caster is ever charged for, and a measuring
- *    form does not charge even that.
- *
- * **`form` is an input.** It decides the underfed rule above, and its condition
- * spares or doubles one of the two losses — what a crossing costs, or what leaks
- * out of the holes at the mouth. It can do nothing else, and in particular it can
- * never add: every setting either lets a loss stand, removes it, or deepens it, so
- * the first law holds under all seven. See `data/spellForms.ts`.
+ * That baseline is resolved `pessimistic` (see `computeReaction`) rather than
+ * at the nearest-unit rounding a real casting uses — see there for why: a
+ * boolean gate reads a rounding coincidence very differently than a number
+ * does, and this is the one place in the resolver that turns a rounded
+ * amount into a boolean.
  */
-export function computeReaction(placements: Placement[], form: SpellForm): Reaction {
+export function buildConditionContext(placements: Placement[], level: CasterLevel): ConditionContext {
+  let baseline: Reaction | null = null
+  return {
+    fedUnderBaseline: (slotIndex: number) => {
+      if (!baseline) baseline = computeReaction(placements, 'prayer', level, true)
+      const report = baseline.slots.find((s) => s.slotIndex === slotIndex)
+      return report ? ledgerTotal(report.shortfall) === 0 : false
+    },
+  }
+}
+
+/**
+ * Walks the ring once clockwise from slot I and closes it, resolving every
+ * demand against the current in flight. Pure — no React, no storage.
+ *
+ * `form` decides two things: the underfed rule (credit vs measure, see
+ * `FORM_META`) and which loss its condition spares or doubles (transit,
+ * spill, or both). It can never add — every setting only lets a loss stand,
+ * removes it, or deepens it. See `data/spellForms.ts`.
+ *
+ * `level` belongs to the spell, not the caster. It scales every placed
+ * reagent's demand and yield by `LEVEL_POWER[level]` before the walk reads
+ * either, and scales the flat transit cost by the shallower `TRANSIT_POWER`
+ * curve. The completion spill does not move with level. See the eighth law
+ * in `data/currencies.ts`.
+ *
+ * `pessimistic` is not a player-facing setting — no call site outside
+ * `buildConditionContext`'s internal baseline probe should ever pass it.
+ * `LEVEL_POWER`/`TRANSIT_POWER` round a demand, a yield and a transit cost
+ * independently, and nearest-rounding several of them at once for the same
+ * verdict lets a ring genuinely a fraction of a unit short of feeding a
+ * reagent read fed at one level and starved at the next with no trend
+ * between them — five numbers all moving the right direction, and a boolean
+ * built from them that doesn't. Rounding a demand up and a yield or transit
+ * cost down can only ever fail a ring the caster's true power hasn't reached
+ * yet, never pass one by luck, so a verdict built this way only moves one
+ * way as level rises. Left `false` (nearest, as before) `computeReaction`
+ * reproduces the exact, extensively-tuned numbers in CLAUDE.md's Balance
+ * section; flipped on for a whole ring rather than one reagent's supply
+ * chain the compounding rounding is heavy enough to read as a real balance
+ * cut — a fed eight-reagent ring at level 1 goes from ~1% dead to 100% —
+ * which is why it stays off the path every real casting takes.
+ */
+export function computeReaction(
+  placements: Placement[],
+  form: SpellForm,
+  level: CasterLevel = 5,
+  pessimistic = false,
+): Reaction {
   if (placements.length === 0) return emptyReaction(form)
 
   const { underfed } = FORM_META[form]
-  const relief = conditionRelief(form, placements)
+  const relief = conditionRelief(form, placements, buildConditionContext(placements, level))
   const transitFactor = transitScale(relief.transit)
+  const demandForCaster = (ledger: Ledger): Ledger =>
+    scaleLedger(ledger, level, pessimistic ? Math.ceil : Math.round)
+  const yieldForCaster = (ledger: Ledger): Ledger =>
+    scaleLedger(ledger, level, pessimistic ? Math.floor : Math.round)
 
   const byIndex = new Map(placements.map((p) => [p.slotIndex, p.component]))
-  /** Normalized demands, keyed by slot. The walk asks for these, and so does `crossInto`. */
+  /** Demands as this caster can command them, keyed by slot. The walk asks for
+   * these, and so does `crossInto`. */
   const demandsBySlot = new Map(
-    placements.map((p) => [p.slotIndex, normalizeLedger(p.component.demands)]),
+    placements.map((p) => [p.slotIndex, demandForCaster(p.component.demands)]),
   )
   const parcels: Parcel[] = []
-  const transfers: Transfer[] = []
   const reports = new Map<number, SlotReport>()
   const bled: Ledger = {}
   const toll: Ledger = {}
 
   /**
-   * What the current pays to cross into a slot: two units to leap a gap, one
-   * across a reagent, nothing at all through a relay — all of it scaled by the
-   * form, which may spare the crossing entirely or charge twice for it.
-   *
-   * The relay is unaffected by that scaling, because nothing times anything is
-   * still nothing. Under a form sparing the transit a relay is simply an ordinary
-   * reagent, which is the honest reading: its whole worth is a crossing that costs
-   * nothing, and on that ring no crossing costs anything.
-   *
-   * The free crossing is unconditional, and it is the *only* thing that makes a
-   * relay a relay. In every other respect it is an ordinary reagent: it is asked for
-   * its demands, billed in full for what the ring could not give it, it releases
-   * its whole yield, and it closes its slot like anything else standing in the
-   * ring.
-   *
-   * It costs nothing wherever it stands, including with holes on both sides. A
-   * relay reached across a gap costs the gap's two and no more, where an ordinary
-   * reagent in the same slot would cost three — the hole is charged as the hole it
-   * is, and the relay adds nothing on top of it. What stops that being free profit
-   * is that the relay is billed for its own unmet demand like anything else; see
-   * the walk below, which has no relay branch in it.
+   * What the current pays to cross into a slot: four units to leap a gap, two
+   * across a reagent, nothing through a relay — scaled by the form (which may
+   * spare or double the crossing) and by level. The relay's free crossing is
+   * unconditional and the only thing that makes it a relay; in every other
+   * respect it is billed like an ordinary reagent (see the walk below, which
+   * has no relay branch).
    */
+  // `transitCarry` accumulates the fractional remainder each crossing's exact
+  // cost leaves after rounding, so a lap's total cost tracks the exact rate to
+  // within one unit instead of collapsing onto a couple of fixed values (2 *
+  // 0.55 and 2 * 0.7 both round to 1 on their own). One carry serves both
+  // reagent and gap crossings since gap cost is exactly double reagent cost.
+  //
+  // `pessimistic` rounds a crossing's cost up rather than to the nearest
+  // unit — see `computeReaction`'s doc comment. Only the internal baseline
+  // probe sets it; a real casting still rounds to nearest here exactly as
+  // before.
+  let transitCarry = 0
+
   function baseTransitCost(slotIndex: number): number {
     const occupant = byIndex.get(slotIndex)
     const stated = !occupant
@@ -204,7 +249,12 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
       : isRelay(occupant)
         ? TRANSIT_LOSS_RELAY
         : TRANSIT_LOSS_REAGENT
-    return stated * transitFactor
+    const exact = stated * TRANSIT_POWER[level] * transitFactor
+    if (exact <= 0) return 0
+    const owed = exact + transitCarry
+    const charged = Math.max(0, (pessimistic ? Math.ceil : Math.round)(owed))
+    transitCarry = owed - charged
+    return charged
   }
 
   function dropSpentParcels(): void {
@@ -214,13 +264,9 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
   }
 
   /**
-   * The slot a crossing is aimed at: the slot itself when something stands there,
-   * and otherwise the next occupied slot round the ring.
-   *
-   * A hole is not a destination. Current leaping a gap is on its way somewhere, and
-   * what it costs to get there is charged to the reagent it is going to — which is
-   * what lets three crossings over two holes be paid by the one reagent waiting at
-   * the end of them.
+   * The slot a crossing is aimed at: itself if occupied, otherwise the next
+   * occupied slot round the ring. A hole is never a destination — the cost of
+   * leaping it is charged to the reagent it's heading toward.
    */
   function destinationOf(slotIndex: number): number {
     let target = slotIndex
@@ -231,52 +277,19 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
   }
 
   /**
-   * Moves the current into the given slot, dimming it by what that slot costs to
-   * cross: two units to leap a gap, one across an ordinary reagent, nothing through
-   * a relay.
+   * Moves the current into the given slot, dimming it by what that slot costs
+   * to cross. The cost is flat against the current as a whole — not per
+   * parcel, not per currency — so it depends only on the shape of the ring,
+   * never on how many currencies it carries.
    *
-   * That is a flat cost against the current as a whole, not a cost per parcel and
-   * not a cost per currency. A crossing dissipates the same one or two units
-   * whether the ring is carrying one currency or five, so loss is a property of
-   * the distance travelled and of the shape of the ring, and of nothing else — a
-   * broad spell is no dearer to run than a narrow one.
-   *
-   * **The current the destination asked for pays first.** A crossing is charged to
-   * what it is carrying to that slot, so a chain pays its own way and unrelated
-   * current standing in the ring cannot pay for it.
-   *
-   * Billing the oldest parcel first — the rule until August 2026 — made an arc's
-   * loss depend on a reagent with nothing to do with it. A source at slot I is the
-   * oldest current for the whole lap, so it absorbed every crossing until it was
-   * spent and everything downstream travelled free: 7 heat crossed two holes and a
-   * reagent intact, where the same ring without the source delivered 2. It read as
-   * a bug in the app, because on the circle it is one — the arc says 7 and the five
-   * units are bled somewhere else, under another currency.
-   *
-   * **What the destination did not ask for pays the remainder, spread across
-   * everything else still in flight.** The cost is never waived, only reassigned: a
-   * slot whose demand is not in flight, and a source that demands nothing at all,
-   * still cost what they cost. Without that fallback a lone source rides the whole
-   * ring untouched, which is the same bug the destination-first rule above fixed,
-   * from the other side.
-   *
-   * The fallback is proportional, not oldest-first. Oldest-first has the same
-   * defect the destination-first rule exists to avoid: whichever parcel happens to
-   * have been released earliest absorbs a crossing in full before a newer parcel
-   * loses anything, so an arc's survival turns on release order rather than on
-   * anything a player set on the circle. Charging every parcel still in flight the
-   * same share keeps the loss a fact about the crossing, not about when the current
-   * it hits happened to arrive.
-   *
-   * A single crossing's toll is one or two units, split across however many
-   * parcels are in flight, so a parcel's exact share of it is usually well under
-   * one unit and rounds to nothing — a flat proportional split with no memory
-   * would tax whichever parcel is currently largest, every crossing, and let
-   * every smaller one ride free indefinitely. `Parcel.debt` is that memory: each
-   * crossing a parcel's share is added to what it already owed, and only once the
-   * running total clears a whole unit is it actually taken. A small parcel still
-   * pays, once enough crossings have accumulated its due; a large one is not
-   * singled out simply for being the only one big enough to round up.
+   * The destination's own demand pays first (`spend`), charged oldest parcel
+   * first, so a chain pays its own way. What the destination didn't ask for
+   * falls to every parcel still in flight, in proportion to what each
+   * carries (`spendProportional`) — the fallback is never waived, only
+   * reassigned, or an undemanded slot or a source with no demand would cross
+   * for free. `Parcel.debt` banks each parcel's unrounded proportional share
+   * so a parcel too small to round up on any one crossing still pays once
+   * enough crossings accumulate its due.
    */
   function crossInto(slotIndex: number): void {
     let remaining = baseTransitCost(slotIndex)
@@ -284,8 +297,7 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
 
     const wanted = demandsBySlot.get(destinationOf(slotIndex))
 
-    // What the destination demands, oldest first: a chain pays its own way before
-    // anything unrelated is touched.
+    // What the destination demands, oldest parcel first.
     const spend = (payable: (currency: Currency) => boolean): void => {
       for (let i = 0; i < parcels.length && remaining > 0; i++) {
         const parcel = parcels[i]
@@ -297,13 +309,10 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
       }
     }
 
-    // What is left unpaid, spread across every parcel still in flight in
-    // proportion to what it is carrying, with each parcel's unrounded share
-    // banked as debt rather than dropped. What is actually taken this crossing
-    // has to total exactly `spend` — the toll is a flat, stated cost, never more
-    // and never less — so a debt that has piled up past what this crossing can
-    // collect waits for the next one, and a crossing that comes up short of
-    // parcels whose debt has already matured defers the least-overdue among them.
+    // What's left unpaid, split across every parcel in flight in proportion to
+    // what it carries, with each parcel's unrounded share banked as debt. The
+    // total taken must equal `spend` exactly, so surplus/shortfall from rounding
+    // is resolved by raising the most-overdue parcels or deferring the least.
     const spendProportional = (): void => {
       if (remaining <= 0) return
       const total = parcels.reduce((sum, parcel) => sum + parcel.amount, 0)
@@ -360,12 +369,8 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
 
   /**
    * A reagent's yield cut to the share of its demand the ring actually met.
-   *
-   * One ratio over the whole ledger rather than one per currency, matching how
-   * transit is charged: what a reagent gives back is a fact about how well it was
-   * fed, not about which of its demands happened to go unmet. Rounded down, so a
-   * measured reagent can never give back more than the share it earned and the
-   * first law cannot be broken by rounding.
+   * One ratio over the whole ledger, not per currency. Rounded down so a
+   * measured reagent never gives back more than it earned.
    */
   function inMeasure(yields: Ledger, fed: number, wanted: number): Ledger {
     const scaled: Ledger = {}
@@ -375,8 +380,8 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     return scaled
   }
 
-  /** Draws up to `want` of a currency for slot `to`, oldest parcel first. */
-  function draw(to: number, currency: Currency, want: number): number {
+  /** Draws up to `want` of a currency, oldest parcel first. */
+  function draw(currency: Currency, want: number): number {
     let taken = 0
     for (let i = 0; i < parcels.length && taken < want; i++) {
       const parcel = parcels[i]
@@ -384,7 +389,6 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
       const amount = Math.min(parcel.amount, want - taken)
       parcel.amount -= amount
       taken += amount
-      transfers.push({ currency, from: parcel.from, to, amount })
     }
     dropSpentParcels()
     return taken
@@ -393,7 +397,7 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
   /** Repays whatever a slot is still owed, out of current that has come round. */
   function repay(report: SlotReport): void {
     for (const [currency, missing] of ledgerEntries(report.shortfall)) {
-      const got = draw(report.slotIndex, currency, missing)
+      const got = draw(currency, missing)
       if (got === 0) continue
       addToLedger(report.received, currency, got)
       const left = missing - got
@@ -403,41 +407,45 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
   }
 
   /**
-   * Puts a slot's yields into the current, whatever the caller decided those are.
-   *
-   * Every reagent reaches here, and the underfed rule is settled before it does: a
-   * crediting form passes the whole catalog yield and bills the difference to the
-   * caster, a measuring one passes the share `inMeasure` cut it down to. Slot I
-   * comes back a second time, for the part the closing lap earned it.
+   * Puts a slot's yields into the current. The underfed rule is already
+   * settled by the caller: a crediting form passes the full catalog yield, a
+   * measuring one passes the share `inMeasure` cut down to. Slot I is called
+   * again after the ring closes, for what the closing lap earned it.
    */
   function release(report: SlotReport, yields: Ledger): void {
     for (const [currency, amount] of ledgerEntries(yields)) {
       if (amount <= 0) continue
       addToLedger(report.released, currency, amount)
-      parcels.push({ currency, from: report.slotIndex, amount, debt: 0 })
+      parcels.push({ currency, amount, debt: 0 })
     }
   }
 
-  /**
-   * What a measured slot would have released had the ring fed it in full, with the
-   * demand it was measured against. Only slot I is ever read back out — every other
-   * slot has had its one chance by the time the walk moves on — but it is keyed by
-   * slot so the rule reads as the general one it is rather than as a special case
-   * bolted to the front of the ring.
-   */
+  /** A measured slot's yield and demand, for slot I to be re-measured against
+   * once the closing lap repays it. Only slot I is ever read back out. */
   const measured = new Map<number, { yields: Ledger; wanted: number }>()
 
-  // The walk: one lap, clockwise from slot I. Every reagent is resolved the same
-  // way, relays included — the free crossing in `baseTransitCost` is the only
-  // thing in the resolver that knows what a relay is.
+  /** What the current parcels amount to right now, by currency — a snapshot for `carrying`. */
+  function heldLedger(): Ledger {
+    const ledger: Ledger = {}
+    for (const parcel of parcels) addToLedger(ledger, parcel.currency, parcel.amount)
+    return ledger
+  }
+
+  const carrying: Ledger[] = []
+
+  // One lap, clockwise from slot I. Every reagent resolves the same way,
+  // relays included — `baseTransitCost` is the only place that asks.
   for (let slotIndex = 0; slotIndex < RING_SLOT_COUNT; slotIndex++) {
     if (slotIndex > 0) crossInto(slotIndex)
 
     const component = byIndex.get(slotIndex)
-    if (!component) continue
+    if (!component) {
+      carrying.push(heldLedger())
+      continue
+    }
 
     const demands = demandsBySlot.get(slotIndex) ?? {}
-    const yields = normalizeLedger(component.yields)
+    const yields = yieldForCaster(component.yields)
 
     const report: SlotReport = {
       slotIndex,
@@ -449,15 +457,13 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     reports.set(slotIndex, report)
 
     for (const [currency, want] of ledgerEntries(demands)) {
-      const got = draw(slotIndex, currency, want)
+      const got = draw(currency, want)
       addToLedger(report.received, currency, got)
       addToLedger(report.shortfall, currency, want - got)
     }
 
-    // The underfed rule, and the only branch in the walk the form is responsible
-    // for. Under a measuring form a reagent gives back the share of its yield that
-    // the ring fed it and the caster is charged nothing; under a crediting form it
-    // gives back all of it and the caster covers the difference.
+    // The only branch in the walk the form controls: measure releases the fed
+    // share and charges nothing, credit releases everything and bills the rest.
     const wanted = ledgerTotal(demands)
     const fed = wanted - ledgerTotal(report.shortfall)
     if (underfed === 'measure' && wanted > 0 && fed < wanted) {
@@ -467,6 +473,7 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     } else {
       release(report, yields)
     }
+    carrying.push(heldLedger())
   }
 
   // Closing the ring: the current crosses from the last slot back to the first.
@@ -478,20 +485,9 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
   if (first) {
     repay(first)
 
-    /*
-     * And under a measuring form that repayment earns slot I more of its yield.
-     * Slot I is the one slot the ring can feed after the fact, so its measure is
-     * provisional: whatever came round raises the share it was fed, and it releases
-     * the difference now, standing at the mouth, without crossing anything.
-     *
-     * Without this a repaid slot I would sit there fed and still stinted, which
-     * reads as a bug rather than a rule. With it, a measuring form wants something
-     * *hungry* at slot I rather than the source every other form opens with — the
-     * reagent that cannot survive the lap is exactly the one that does not have to
-     * walk it. It is bounded by what one reagent can carry, and it is paid for out
-     * of the manifestation, since feeding slot I is what the ring spent its lap
-     * doing.
-     */
+    // Under a measuring form, that repayment raises slot I's fed share, so it
+    // releases the difference now rather than staying measured at its
+    // original, pre-repayment share.
     const deferred = measured.get(0)
     if (first.measured && deferred) {
       const fed = deferred.wanted - ledgerTotal(first.shortfall)
@@ -505,33 +501,19 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     }
   }
 
-  // An open slot is a hole in the circle, and current spills out of a hole on its
-  // way to the mouth. What the ring still holds is delivered in the proportion the
-  // ring was closed; the remainder is counted as bled rather than quietly dropped,
-  // so the ledger still balances against what the reagents released.
+  // An open slot spills current on its way to the mouth. What's delivered is
+  // the held ledger scaled by `completion`; the remainder counts as bled.
   const held: Ledger = {}
   for (const parcel of parcels) addToLedger(held, parcel.currency, parcel.amount)
 
-  // The spill, under whatever relief the form's condition earned: untouched for a
-  // form that asks nothing, waived entirely for a ring that met what it asked, and
-  // squared for one that did not.
+  // Spared entirely if the condition was met, squared if it wasn't, untouched
+  // if the form asks nothing.
   const completion = completionFactor(placements.length, relief.spill)
 
-  /*
-   * The share is apportioned across the currencies by largest remainder, not by
-   * rounding each one on its own.
-   *
-   * Rounding per currency rounds half *up* once per currency in flight, so a ring
-   * carrying five delivered up to two and a half units more than the share the
-   * fourth law states — and the overshoot grew with the ring's width, which is
-   * exactly the wrong axis for a rule about how closed the ring is. A four-reagent
-   * ring holding 3/5/5/5/5 delivered 14 where half is 11.5.
-   *
-   * Rounding the total once and handing the leftover units to the largest
-   * fractional parts keeps the error at half a unit for the whole ring however
-   * many currencies it carries, and keeps `manifestation + bled` equal to what was
-   * held, so law 1 still balances to the unit.
-   */
+  // Apportioned across currencies by largest remainder, not by rounding each
+  // one on its own — rounding per currency compounds with the ring's width
+  // (law 4 is about closure, not width). This holds the error to half a unit
+  // total and keeps manifestation + bled equal to what was held.
   const shares = ledgerEntries(held).map(([currency, amount]) => {
     const exact = amount * completion
     const whole = Math.floor(exact)
@@ -555,14 +537,9 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     addToLedger(bled, share.currency, share.amount - share.whole)
   }
 
-  // Unmet demand, charged to the caster. This is the whole of the toll: nothing
-  // else in the system bills the body, so a circle that feeds every reagent it
-  // holds costs the caster nothing at all.
-  //
-  // A measuring form charges nothing at all, and does not need to: it took the
-  // difference out of the yield instead. That holds for every slot and every ring,
-  // so the three measuring forms resolve to a toll of exactly zero always, which
-  // `sim/balance.ts` asserts rather than reports.
+  // Unmet demand, charged to the caster — the whole of the toll. A measuring
+  // form charges nothing here since it already took the difference out of the
+  // yield; `sim/balance.ts` asserts this resolves to zero for every ring.
   if (underfed === 'credit') {
     for (const report of reports.values()) {
       for (const [currency, amount] of ledgerEntries(report.shortfall)) {
@@ -577,7 +554,7 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     filled: placements.length,
     completion,
     slots: [...reports.values()].sort((a, b) => a.slotIndex - b.slotIndex),
-    transfers: mergeTransfers(transfers),
+    carrying,
     manifestation,
     toll,
     bled,
@@ -585,18 +562,6 @@ export function computeReaction(placements: Placement[], form: SpellForm): React
     tollTotal: ledgerTotal(toll),
     bledTotal: ledgerTotal(bled),
   }
-}
-
-/** Collapses repeated draws on the same parcel run into one arc per from/to/currency. */
-function mergeTransfers(transfers: Transfer[]): Transfer[] {
-  const merged = new Map<string, Transfer>()
-  for (const transfer of transfers) {
-    const key = `${transfer.from}>${transfer.to}:${transfer.currency}`
-    const existing = merged.get(key)
-    if (existing) existing.amount += transfer.amount
-    else merged.set(key, { ...transfer })
-  }
-  return [...merged.values()]
 }
 
 /** Resolves a spell's slot ids into placements, skipping empty and dangling slots. */

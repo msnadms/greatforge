@@ -65,10 +65,8 @@ function best(
     })
     let value = score(ring, form)
 
-    // Steepest ascent, and the whole neighbourhood is enumerated against a *frozen*
-    // ring before anything is accepted. Mutating `ring` mid-scan invalidates the
-    // `open`/`used` sets it was built from, which is how the first cut of this probe
-    // produced rings with two reagents standing in one slot.
+    // Steepest ascent over a frozen ring; mutating `ring` mid-scan would
+    // invalidate the `open`/`used` sets and could place two reagents in one slot.
     for (;;) {
       const current = ring
       const used = new Set(current.map((p) => p.component.id))
@@ -153,10 +151,9 @@ for (const form of SPELL_FORMS) {
 }
 
 /**
- * The frontier that matters: the loudest ring a form can reach *at a toll of zero*,
- * by reagent count. A measuring form is always at zero, so this is where the
- * benediction's three reagents can be compared with a prayer's eight without the
- * credit rule flattering either.
+ * The loudest ring a form can reach at a toll of zero, by reagent count. A
+ * measuring form is always at zero, so this compares e.g. benediction's three
+ * reagents against a prayer's eight without the credit rule flattering either.
  */
 function cleanFrontier(): void {
   console.log('\n=== loudest ring at a toll of zero, by reagent count ===')
@@ -165,11 +162,9 @@ function cleanFrontier(): void {
   for (const form of SPELL_FORMS) {
     const row: string[] = []
     for (let count = 1; count <= RING_SLOT_COUNT; count++) {
-      // The toll is penalized rather than forbidden. Scoring a tolled ring as
-      // -Infinity makes the whole neighbourhood a plateau the climb cannot cross, so
-      // the first cut of this table reported cells unreachable when they were only
-      // unfound. A penalty of 1000 still guarantees the winner is untolled wherever
-      // an untolled ring of that size exists at all.
+      // Penalize a tolled ring rather than forbidding it outright (-Infinity
+      // would flatten the neighbourhood into an unclimbable plateau); 1000 is
+      // steep enough that the winner is still untolled whenever one exists.
       const scoreAtCount: Score = (ring, f) => {
         if (ring.length !== count) return -Infinity
         const r = computeReaction(ring, f)
@@ -186,9 +181,8 @@ function cleanFrontier(): void {
 cleanFrontier()
 
 /**
- * The benediction, exhaustively. Three reagents out of the catalog in three of the
- * eight slots is small enough to enumerate outright, so this is the true optimum
- * rather than a climb.
+ * The benediction, exhaustively: three reagents in three of eight slots is
+ * small enough to enumerate outright, giving the true optimum rather than a climb.
  */
 function benedictionExhaustive(): void {
   const slotSets: number[][] = []
@@ -320,10 +314,10 @@ for (const component of [...CATALOG]
 }
 
 /**
- * The closed ring, said seven ways. `completionFactor` squares the share, and 1
- * squared is 1 — so a form whose condition names the spill forfeits *nothing* on a
- * full ring whether it met the condition or not. The ward is kept off this ground by
- * its "at least one slot empty" clause; the benediction is not.
+ * The closed ring, said seven ways. `completionFactor` squares the share, so a
+ * full ring forfeits nothing on a spill-based condition regardless of whether
+ * it was met. The ward is kept off this ground by its "slots empty" clause;
+ * the benediction is not.
  */
 function theClosedRing(): void {
   state = 0xc105ed

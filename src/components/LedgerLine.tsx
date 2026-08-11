@@ -2,12 +2,7 @@ import type { CSSProperties } from 'react'
 import { CURRENCY_META } from '../data/currencies'
 import { ledgerEntries, type Ledger } from '../types/worldbuilding'
 
-/**
- * How much of the currency's name a pip spells out. The ring is read at a
- * glance and has no room for words, so there the hue carries the currency and
- * the pip is bare number; the rail is read carefully and has room, so there it
- * is spelled in full.
- */
+/** How much of the currency's name a pip spells out. */
 export type LedgerLabels = 'full' | 'short' | 'none'
 
 function Pips({
@@ -41,11 +36,7 @@ function Pips({
   )
 }
 
-/**
- * A material's ledger at a glance: what it asks on the left, what it gives on
- * the right. Used on slot cards, tray cards and the drag preview, so a reagent
- * reads the same wherever it is.
- */
+/** A material's ledger at a glance: what it asks on the left, what it gives on the right. */
 export function LedgerLine({
   demands,
   yields,

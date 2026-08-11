@@ -36,14 +36,11 @@ export const SPELL_FORMS = [
 export type SpellForm = (typeof SPELL_FORMS)[number]
 
 /**
- * How hard the material is to come by or to make, and — since August 2026 — a
- * power signal too: the reaction still never reads it, but the catalog now tunes
- * it so scarcity tracks strength. Common is the baseline any ring can be built
- * from; uncommon is solid but unremarkable; rare is a reagent worth building a
- * ring around, priced in how hard it is to get rather than in a stat the resolver
- * sees. Singular sits above that: at most one or two in the whole catalog, each
- * doing at a single slot what two `rare` reagents would together, and each
- * grounded in a real mechanism that has only ever been pulled off once.
+ * How hard the material is to come by or to make. The resolver never reads it,
+ * but the catalog tunes it so scarcity tracks strength: common is any ring's
+ * baseline, uncommon is solid but unremarkable, rare is worth building a ring
+ * around, and singular is one or two catalog entries doing at a single slot
+ * what two `rare` reagents would together.
  */
 export const RARITIES = ['common', 'uncommon', 'rare', 'singular'] as const
 
@@ -55,12 +52,9 @@ export const RING_SLOT_COUNT = 8
 /**
  * How a form's condition lands on one kind of loss: `spared` when the circle met
  * what the form asked of it, `doubled` when it did not, `plain` for a form that
- * asks nothing.
- *
- * These are the only three settings, and there is deliberately no fourth that
- * *adds* to what leaves the ring. A form may decide where the losses fall and
- * nothing else — the moment one could put a unit into the world that no reagent was
- * carrying, the first law is a lie. See the seventh law in `data/currencies.ts`.
+ * asks nothing. Deliberately no fourth setting that *adds* to what leaves the
+ * ring — a form may only decide where losses fall. See the seventh law in
+ * `data/currencies.ts`.
  */
 export type LossRelief = 'spared' | 'plain' | 'doubled'
 
@@ -71,39 +65,21 @@ export function transitScale(relief: LossRelief): number {
 }
 
 /**
- * How much of what the ring still holds at the mouth actually leaves it.
+ * How much of what the ring still holds at the mouth actually leaves it. An
+ * empty slot is a hole in the circle, and the share that survives is just the
+ * share of the ring that was closed: eight reagents deliver all of it, four
+ * deliver half, two a quarter.
  *
- * An empty slot is a hole in the circle, and current spills out of a hole. The
- * share that survives is just the share of the ring you closed: eight reagents
- * deliver all of it, four deliver half, two deliver a quarter.
+ * Never exceeds 1 — a full ring is the baseline, not a bonus, since anything
+ * above 1 would put units into the world no reagent carried (law 1). `doubled`
+ * squares the share rather than halving it, so the forfeit is nil on a closed
+ * ring and severe on a sparse one, keeping the penalty pointed at the form's
+ * required shape rather than the working's size.
  *
- * Without this, transit loss cannot reach a sparsely filled ring at all. Loss is
- * only charged against current in flight, so a caster who puts everything in the
- * last two slots is never billed for the six empty ones — the current is released
- * after the gaps and leaves before it could ever cross them. That made a two-reagent
- * ring the most efficient thing in the game and put small circles outside the
- * cost system entirely.
- *
- * It never exceeds 1, under any relief. A full ring is the baseline, not a bonus:
- * a multiplier above 1 would put units into the world that no reagent was carrying,
- * and that is precisely what the first law forbids. `spared` therefore means the
- * ring merely stops leaking, which is the most a form can ever be worth — it is
- * why the four forms that spare the spill are worth nothing at all on a full ring,
- * and why the two that spare the transit are the ones that reward filling it.
- *
- * `doubled` squares the share rather than halving it, so the forfeit is nil on a
- * closed ring and severe on a sparse one. That keeps the penalty pointed at the
- * shape the form asked for and not at the size of the working.
- *
- * `filled` is simply the number of reagents standing in the ring. Every reagent closes
- * its slot, relays included: a relay is billed for what the ring could not give it
- * exactly like anything else, so there is no way to buy completion with one. A
- * reagent a measuring form cut down closes its slot too — it stands in the ring, so
- * the ring is not open there.
- *
- * `spill` is stated rather than defaulted. Every ring is resolved under some form,
- * so there is no caller that legitimately wants an unrelieved completion, and a
- * default would let one compute a share no casting produces.
+ * `filled` is the count of reagents standing in the ring, relays and
+ * measure-cut reagents included — every occupied slot closes, whether or not
+ * it reacted. `spill` is stated rather than defaulted since every ring is
+ * resolved under some form.
  */
 export function completionFactor(filled: number, spill: LossRelief): number {
   if (spill === 'spared') return 1
@@ -114,57 +90,99 @@ export function completionFactor(filled: number, spill: LossRelief): number {
 /**
  * Most of any one currency a single material may demand or yield.
  *
- * This sits in a narrow window, and both walls of it are real.
- *
- * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT = 8 units. A crossing is
- * charged to the current the slot ahead demanded and falls back to the oldest in
- * flight, so a yield nothing downstream asks for is billed for the whole lap and it
- * is the reagent at slot I that pays it. The ceiling therefore has to clear 8 or
- * slot I can hold nothing that reaches the mouth — at a ceiling of 9 the best
- * reagent in the world returns one unit from there, and the front of the ring is
- * scenery. Twelve leaves it returning 4.
- *
- * The upper wall used to be the relay: when a crossing cost one unit of every
- * currency in flight, a relay saved as much as five and the ceiling had to stay
- * low enough that a plain reagent in the same slot did not simply beat it. Transit
- * is now flat, so the free crossing saves exactly one unit however wide the ring
- * is, and that wall is gone. A relay is a cheap slot rather than a strong one.
+ * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT = 16 units, and a
+ * crossing that nothing downstream demands falls back to the oldest current in
+ * flight — the reagent at slot I — so the ceiling has to clear 16 or slot I can
+ * never hold anything that reaches the mouth. Scaled together with
+ * `TRANSIT_LOSS_REAGENT`/`TRANSIT_LOSS_GAP` so the ratio between a reagent's
+ * ceiling and the lap's cost stays fixed; see the eighth law and `LEVEL_POWER`
+ * below.
  */
-export const MAX_LEDGER_ENTRY = 12
+export const MAX_LEDGER_ENTRY = 24
 
 /**
- * Units of current dissipated crossing into a slot that holds an ordinary reagent.
- * This is what makes position matter: a yield of 4 is dead four reagents
- * downstream.
+ * How many rungs of power a working can be set to, and the fraction of a
+ * reagent's ledger each rung actually commands.
  *
- * A flat cost against the current as a whole — not one unit of every currency.
- * Charging per currency made a wide ring pay five times what a narrow one paid for
- * the same walk, which priced the *breadth* of a spell rather than its shape and
- * erased every small flow before it reached the mouth.
+ * Set directly on the spell (`Spell.casterLevel`) through `LevelControl` in the
+ * editor rather than earned or carried on a profile, so a working resolves the
+ * same way every time it is opened regardless of what else the caster has
+ * since written.
  *
- * It is charged to the current the destination demanded, and only what that cannot
- * cover falls on the oldest in flight. See `crossInto`: billing the oldest outright
- * let an unrelated source at slot I absorb every crossing in the lap and carry a
- * downstream chain for free.
+ * The fraction scales a reagent's demand and yield together, by the same
+ * amount — see the eighth law in `data/currencies.ts`. The flat transit cost
+ * scales down too (`TRANSIT_POWER` below), on a shallower curve; the spill at
+ * an open slot does not move with level at all. See `sim/balance.ts`'s
+ * by-level table for what the curve buys.
+ *
+ * The five steps are a plain 15 points apart (40/55/70/85/100) and land the
+ * ceiling on exactly the whole catalog — there is no "true" number a
+ * reagent's ledger is scaled down from; level five simply reads it whole.
  */
-export const TRANSIT_LOSS_REAGENT = 1
+export const CASTER_LEVELS = [1, 2, 3, 4, 5] as const
+
+export type CasterLevel = (typeof CASTER_LEVELS)[number]
+
+/** A new working starts at the bottom rung. */
+export const DEFAULT_CASTER_LEVEL: CasterLevel = 1
 
 /**
- * Units dissipated crossing into an empty slot — the current has to leap the gap.
- * Flat, exactly as `TRANSIT_LOSS_REAGENT` is; a hole costs twice what a reagent does.
+ * The flat transit cost's own fraction, on a curve shallower than
+ * `LEVEL_POWER`'s: it reaches 1 (full, catalog-scale cost) by level 4 rather
+ * than needing level 5, so a low level's crossings cost proportionally less
+ * than its reagents shrink by. The flat lap cost doesn't shrink with a
+ * reagent's ledger on its own, so without this curve a low level would spend
+ * most of what it carries just crossing the ring. See `crossInto`'s transit
+ * carry in `lib/reaction.ts` for how the fraction rounds to a whole crossing
+ * cost without collapsing levels onto the same value.
  */
-export const TRANSIT_LOSS_GAP = 2
+export const TRANSIT_POWER: Record<CasterLevel, number> = {
+  1: 0.55,
+  2: 0.7,
+  3: 0.85,
+  4: 1,
+  5: 1,
+}
+
+export const LEVEL_POWER: Record<CasterLevel, number> = {
+  1: 0.4,
+  2: 0.55,
+  3: 0.7,
+  4: 0.85,
+  5: 1,
+}
+
+export function isCasterLevel(value: unknown): value is CasterLevel {
+  return typeof value === 'number' && (CASTER_LEVELS as readonly number[]).includes(value)
+}
+
+export function normalizeCasterLevel(value: unknown): CasterLevel {
+  return isCasterLevel(value) ? value : DEFAULT_CASTER_LEVEL
+}
 
 /**
- * Units lost crossing into a relay: none. Loss is a property of the medium, and a
- * relay is the one material that carries current without resisting it.
- *
- * It applies wherever the relay stands, holes on both sides included: a relay
- * reached across a gap costs the gap's two and nothing further, where an ordinary
- * reagent in that slot would cost three. This is the entire difference between a
- * relay and an ordinary reagent — in every other respect the resolver treats them
- * identically, and a relay is billed for its own unmet demand like anything else,
- * which is what stops the free crossing being free profit.
+ * Units of current dissipated crossing into a slot that holds an ordinary
+ * reagent. Flat against the current as a whole, not per currency, so the cost
+ * of a lap depends on the ring's shape and never on how many currencies it
+ * carries. Charged to the current the destination demanded, falling back to
+ * the oldest current in flight for whatever that doesn't cover (see
+ * `crossInto` in `lib/reaction.ts`). Level never scales this constant, which
+ * is what makes a low level's shrunken reagents feel the lap harder.
+ */
+export const TRANSIT_LOSS_REAGENT = 2
+
+/**
+ * Units dissipated crossing into an empty slot — the current has to leap the
+ * gap. Flat, exactly as `TRANSIT_LOSS_REAGENT` is; a hole costs twice what a
+ * reagent does.
+ */
+export const TRANSIT_LOSS_GAP = 4
+
+/**
+ * Units lost crossing into a relay: none. Applies wherever the relay stands,
+ * holes on both sides included — the entire difference between a relay and an
+ * ordinary reagent, since a relay is otherwise billed for its own unmet
+ * demand exactly like anything else.
  */
 export const TRANSIT_LOSS_RELAY = 0
 
@@ -201,6 +219,14 @@ export interface Spell {
   title: string
   /** How it is spoken, and an input to the reaction. See `data/spellForms.ts`. */
   form: SpellForm
+  /**
+   * The power this working was set to. Belongs to the spell rather than the
+   * caster: the level scales every placed reagent's ledger before the walk reads
+   * it (the eighth law), so a spell resolves the same way every time it is
+   * opened, and raising the level on one working never reaches into any other.
+   * Set directly through `LevelControl` in the editor.
+   */
+  casterLevel: CasterLevel
   /** The authored prayer/elegy/litany itself. */
   text: string
   notes: string
@@ -293,13 +319,9 @@ export function normalizeComponent(input: Partial<MaterialComponent> & { id: str
  * Fills in anything a stored spell is missing, the way `normalizeComponent` does
  * for a reagent.
  *
- * `form` is the field that matters here. It indexes `FORM_META` directly in the
- * reaction panel and the spellbook, so an unknown or absent one is not a cosmetic
- * problem: the lookup returns undefined, reading a label off it throws during
- * render, and with no error boundary above them the whole workshop goes blank.
- * Spells written before the forms existed, spells left behind by a form that was
- * later renamed, and hand-edited documents all land here, and any of the three
- * would otherwise take the app down rather than open as a prayer.
+ * `form` matters most here: it indexes `FORM_META` directly, so an unknown or
+ * absent one throws during render with no error boundary above it, taking the
+ * whole workshop down rather than opening as a prayer.
  */
 export function normalizeSpell(input: Partial<Spell> & { id: string }): Spell {
   const now = Date.now()
@@ -307,6 +329,7 @@ export function normalizeSpell(input: Partial<Spell> & { id: string }): Spell {
     id: input.id,
     title: input.title ?? '',
     form: SPELL_FORMS.includes(input.form as SpellForm) ? (input.form as SpellForm) : 'prayer',
+    casterLevel: normalizeCasterLevel(input.casterLevel),
     text: input.text ?? '',
     notes: input.notes ?? '',
     slots: normalizeSlots(input.slots),

@@ -7,6 +7,7 @@ import {
   describeRole,
   type Role,
 } from '../data/currencies'
+import { ledgerForCaster } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import {
@@ -31,19 +32,13 @@ const SORT_LABEL: Record<Sort, string> = {
   asks: 'By what it asks',
 }
 
-/**
- * Sorting a reagent against the *other* reagents, which is the order a shelf is kept
- * in. Ties fall back to the name so the list never reshuffles under an edit that
- * did not touch the key being sorted on.
- */
 function compareBy(sort: Sort, a: MaterialComponent, b: MaterialComponent): number {
   switch (sort) {
     case 'role':
       return ROLES.indexOf(describeRole(a)) - ROLES.indexOf(describeRole(b))
     case 'rarity':
       return RARITIES.indexOf(a.rarity) - RARITIES.indexOf(b.rarity)
-    // Largest first: what you are looking for on these two axes is the fat reagent,
-    // not the thin one.
+    // Largest first.
     case 'gives':
       return ledgerTotal(b.yields) - ledgerTotal(a.yields)
     case 'asks':
@@ -61,14 +56,7 @@ function touchesAny(ledger: Ledger, currencies: ReadonlySet<Currency>): boolean 
   return false
 }
 
-/**
- * One group of currency checkboxes — the currencies a reagent asks for, or the
- * ones it gives back.
- *
- * A checkbox rather than the role select's one-at-a-time, because the question
- * being asked of the codex is nearly always a disjunction: building a ring that
- * has heat and motion in flight, what will take *either* of them.
- */
+/** One group of currency checkboxes — the currencies a reagent asks for, or gives back. */
 function CurrencyFilter({
   legend,
   hint,
@@ -112,7 +100,7 @@ function CurrencyFilter({
 }
 
 export function ComponentTray() {
-  const { components, armedComponentId, armComponent, deleteComponent, loading, mode } =
+  const { components, armedComponentId, armComponent, deleteComponent, loading, mode, draft } =
     useWorkshop()
   const { startDrag } = useDrag()
   const [query, setQuery] = useState('')
@@ -144,10 +132,7 @@ export function ComponentTray() {
 
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    // Any of the checked currencies within a column, all of the columns across
-    // them: "asks heat or motion, and gives light" is the shape of the question a
-    // half-built ring poses, and checking a second box should widen the answer
-    // rather than empty it.
+    // Any of the checked currencies within a column, all of the columns across them.
     const matched = components.filter((component) => {
       if (roleFilter !== 'all' && describeRole(component) !== roleFilter) return false
       if (asks.size > 0 && !touchesAny(component.demands, asks)) return false
@@ -164,14 +149,26 @@ export function ComponentTray() {
     )
   }, [components, query, roleFilter, sort, asks, gives])
 
+  // Scaled once per catalog view rather than per row on every render.
+  const scaledLedgers = useMemo(
+    () =>
+      new Map(
+        visible.map((component) => [
+          component.id,
+          {
+            demands: ledgerForCaster(component.demands, draft.casterLevel),
+            yields: ledgerForCaster(component.yields, draft.casterLevel),
+          },
+        ]),
+      ),
+    [visible, draft.casterLevel],
+  )
+
   function openEditor(component: MaterialComponent | null) {
     setEditing(component)
     setEditorOpen(true)
   }
 
-  // The codex stays readable while a working is being viewed, but nothing in it
-  // may be aimed at the circle: a viewed circle refuses the placement, and an
-  // armed reagent with nowhere to go reads as the app having broken.
   const canPlace = mode === 'edit'
 
   function handlePointerDown(event: PointerEvent<HTMLLIElement>, component: MaterialComponent) {
@@ -273,7 +270,11 @@ export function ComponentTray() {
                   </span>
                 </div>
 
-                <LedgerLine demands={component.demands} yields={component.yields} labels="full" />
+                <LedgerLine
+                  demands={scaledLedgers.get(component.id)?.demands ?? {}}
+                  yields={scaledLedgers.get(component.id)?.yields ?? {}}
+                  labels="full"
+                />
 
                 <p className="tray__desc">{component.description}</p>
 

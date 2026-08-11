@@ -2,15 +2,9 @@ import { FORM_LIST, FORM_META, UNDERFED_RULE } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
 import { RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
+import { LevelControl } from './LevelControl'
 
-/**
- * An inscribed working, read rather than edited.
- *
- * Nothing here is a field and nothing carries a field's name: the page shows the
- * working the way it was written down, so the title is a title and the words are
- * the words. What tells the notes from the text is which page they are on and
- * what they are set in, which is how the two differ in the book anyway.
- */
+/** An inscribed working, read rather than edited. No field carries its name here. */
 function BookView() {
   const { draft, editDraft } = useWorkshop()
   const form = FORM_META[draft.form]
@@ -20,7 +14,8 @@ function BookView() {
       <div className="book__page book__page--left">
         <h2 className="book__viewTitle">{draft.title || 'Untitled working'}</h2>
         <p className="book__viewForm">
-          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()}
+          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()}, worked at level{' '}
+          {draft.casterLevel}.
         </p>
         {draft.notes ? <p className="book__viewNotes">{draft.notes}</p> : null}
       </div>
@@ -75,10 +70,6 @@ function BookEditor() {
             value={draft.form}
             onChange={(event) => updateDraft({ form: event.target.value as SpellForm })}
           >
-            {/* The option is the form's name and nothing else. What it does to the
-                resolver is hover text here, the same as the role hints in the tray,
-                and it is on the page in the reaction panel, where the condition can
-                be judged against the circle as placed. */}
             {FORM_LIST.map((entry) => (
               <option key={entry.form} value={entry.form} title={UNDERFED_RULE[entry.underfed]}>
                 {entry.label}
@@ -86,6 +77,8 @@ function BookEditor() {
             ))}
           </select>
         </label>
+
+        <LevelControl />
 
         <label className="field field--grow">
           <span className="field__label">Notes</span>

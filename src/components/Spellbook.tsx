@@ -1,4 +1,5 @@
 import { FORM_LIST, FORM_META, UNDERFED_RULE } from '../data/spellForms'
+import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
 import { RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
 
@@ -47,6 +48,16 @@ function BookEditor() {
   return (
     <div className="book">
       <div className="book__page book__page--left">
+        <button
+          type="button"
+          className="btn btn--small book__randomName"
+          title="Name it for the form and whatever the ring manifests most of"
+          aria-label="Random name"
+          onClick={() => updateDraft({ title: generateSpellName(draft.form, reaction.manifestation) })}
+        >
+          🎲
+        </button>
+
         <label className="field">
           <span className="field__label">Title</span>
           <input

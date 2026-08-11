@@ -48,12 +48,16 @@ import type { WorkshopRepository } from './repository'
  * a ring can be built from, uncommon for solid but unremarkable, rare for the five
  * converters that are the only reliable route into mass, charge and the way back
  * to light and motion — and renames the light-to-heat converter to Bone Black,
- * since it shared a name with the light sink. Version 7 adds two more `rare`
- * converters (Light Mill, Quartz Anvil) filling the two good routes rarity left
- * uncovered, and the catalog's first two `singular` reagents (Tungsten Foil,
- * Kilonova Fragment), each doing at one slot what two `rare` reagents do together.
+ * since it shared a name with the light sink. Version 7 adds a sixth `rare`
+ * converter (Light Mill), the `uncommon` converter it inverts (Quartz Anvil,
+ * motion to light), and the catalog's first two `singular` reagents (Tungsten
+ * Foil, Quartz Filament), each doing at one slot what two `rare` reagents do
+ * together. Version 8 gives rarity a fourth source (Pitchblende) and a
+ * fifth fuel (Flywheel), so `rare` is no longer only converters, and
+ * drops Frankincense back to `uncommon` to hold the tier's converter count at
+ * five now that it spans more than one role.
  */
-const SEED_VERSION = 7
+const SEED_VERSION = 8
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>

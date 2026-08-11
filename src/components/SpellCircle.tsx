@@ -548,8 +548,8 @@ export function SpellCircle({ children }: { children: ReactNode }) {
                 y2={line.y2}
               >
                 <stop offset="0%" stopColor={line.color} stopOpacity="1" />
-                <stop offset="55%" stopColor={line.color} stopOpacity="0.55" />
-                <stop offset="100%" stopColor={line.color} stopOpacity="0.08" />
+                <stop offset="55%" stopColor={line.color} stopOpacity="0.15" />
+                <stop offset="100%" stopColor={line.color} stopOpacity="0" />
               </linearGradient>
             ))}
           </defs>

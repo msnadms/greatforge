@@ -694,7 +694,7 @@
 .book__actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   gap: 8px;
 }
 
@@ -842,6 +842,12 @@
   font-size: 11px;
   line-height: 1.5;
   color: var(--rune);
+}
+
+.reaction__titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 /* What the chosen form does to the resolver, beside the numbers it produced. */
@@ -1078,9 +1084,42 @@
 
 .tray__head {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+}
+
+.tray__head .panel__title {
+  white-space: nowrap;
+}
+
+.tray__viewToggle {
+  display: flex;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.tray__viewStep {
+  padding: 3px 8px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.tray__viewStep:hover {
+  border-color: var(--accent-border);
+}
+
+.tray__viewStep--active {
+  background: var(--accent-bg);
+  border-color: var(--accent-border);
+  color: var(--text-h);
 }
 
 .tray__filters {
@@ -1149,6 +1188,12 @@
   gap: 8px;
 }
 
+/* Two columns of the compact card below; the rail around it already scrolls. */
+.tray__list--grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
 .tray__item {
   border: 1px solid var(--border);
   border-left: 3px solid hsl(var(--slot-hue, 40) var(--gem-s-strong) 55%);
@@ -1181,6 +1226,28 @@
   touch-action: auto;
   user-select: text;
   -webkit-user-select: text;
+}
+
+/*
+ * The alternate codex view: the same card a filled, editable slot on the
+ * circle draws (`.slot--filled`), minus the fixed width and absolute
+ * positioning a ring slot needs and this grid item doesn't.
+ */
+.tray__item--card {
+  border: 1px solid hsl(var(--slot-hue, 40) var(--gem-s) 55% / 0.9);
+  border-radius: 10px;
+  box-shadow:
+    0 0 18px -4px hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.5),
+    var(--shadow);
+  background:
+    linear-gradient(
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.14),
+      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.05)
+    ),
+    var(--panel);
+  min-height: 62px;
+  align-items: center;
+  justify-content: center;
 }
 
 .tray__itemHead {
@@ -1444,6 +1511,8 @@ body.is-dragging * {
 .btn--small {
   font-size: 11px;
   padding: 3px 8px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .btn--primary {

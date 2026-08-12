@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { CURRENCY_META, LAWS } from '../data/currencies'
 import { FORM_META, LOSS_RELIEF_RULE, UNDERFED_LABEL, UNDERFED_RULE } from '../data/spellForms'
 import type { SlotReport } from '../lib/reaction'
@@ -62,6 +62,7 @@ function LedgerReadout({ ledger, describe }: { ledger: Ledger; describe: 'vent' 
 
 export function ReactionPanel() {
   const { reaction } = useWorkshop()
+  const [expanded, setExpanded] = useState(true)
   // The form the numbers below were resolved under, not the one the picker is
   // currently showing.
   const form = FORM_META[reaction.form]
@@ -74,114 +75,128 @@ export function ReactionPanel() {
 
   return (
     <section className="panel reaction">
-      <h2 className="panel__title">The reaction</h2>
-
-      {/* The form's name and underfed setting are named with the prose behind them
-          as hover text; the condition stays on the page since it's a verdict on
-          the ring as placed and changes as reagents move. */}
-      <div className="reaction__form">
-        <p className="reaction__formLine">
-          Spoken as {form.article}{' '}
-          <strong title={form.gloss}>{form.label.toLowerCase()}</strong>.{' '}
-          <span className="reaction__formTag" title={UNDERFED_RULE[form.underfed]}>
-            {UNDERFED_LABEL[form.underfed]}
-          </span>
-          .
-        </p>
-
-        {form.condition ? (
-          // `null` only for a cold circle, which is neither met nor failed.
-          <div className={`reaction__condition reaction__condition--${verdict}`}>
-            <p className="reaction__conditionHead">{CONDITION_HEAD[verdict]}</p>
-            <p className="reaction__conditionText">{form.condition.statement}</p>
-            {reaction.conditionMet === null ? null : (
-              <p className="reaction__conditionCost">
-                {LOSS_RELIEF_RULE[form.condition.loss][reaction.conditionMet ? 'spared' : 'doubled']}
-              </p>
-            )}
-          </div>
-        ) : null}
+      <div className="reaction__titleRow">
+        <h2 className="panel__title">The reaction</h2>
+        <button
+          type="button"
+          className="btn__expandable"
+          aria-expanded={expanded}
+          onClick={() => setExpanded(!expanded)}
+        >
+          {expanded ? '^' : '˅'}
+        </button>
       </div>
 
-      {reaction.filled === 0 ? (
-        <p className="reaction__empty">
-          The circle is cold.
-        </p>
-      ) : (
+      {expanded && (
         <>
-          <div className="reaction__block">
-            <h3 className="reaction__heading">
-              Manifestation
-              <span className="reaction__total">{reaction.manifestationTotal}</span>
-            </h3>
-            {reaction.manifestationTotal === 0 ? (
-              <p className="reaction__none">
-                Nothing leaves the ring. The circle consumes everything it makes, and does nothing.
-              </p>
-            ) : (
-              <LedgerReadout ledger={reaction.manifestation} describe="vent" />
-            )}
-          </div>
+          {/* The form's name and underfed setting are named with the prose behind them
+              as hover text; the condition stays on the page since it's a verdict on
+              the ring as placed and changes as reagents move. */}
+          <div className="reaction__form">
+            <p className="reaction__formLine">
+              Spoken as {form.article}{' '}
+              <strong title={form.gloss}>{form.label.toLowerCase()}</strong>.{' '}
+              <span className="reaction__formTag" title={UNDERFED_RULE[form.underfed]}>
+                {UNDERFED_LABEL[form.underfed]}
+              </span>
+              .
+            </p>
 
-          <div className={`reaction__block${reaction.tollTotal > 0 ? ' reaction__block--toll' : ''}`}>
-            <h3 className="reaction__heading">
-              Toll
-              <span className="reaction__total">{reaction.tollTotal}</span>
-            </h3>
-            {reaction.tollTotal === 0 ? (
-              stintedSlots.length > 0 ? (
-                <p className="reaction__none">
-                  Nothing is charged to you, but the ring did not feed itself. Stinted at{' '}
-                  <SlotRun slots={stintedSlots} />. Each gave back only the share it was fed.
-                </p>
-              ) : (
-                <p className="reaction__none">
-                  The ring supplies itself. This casting costs the caster nothing.
-                </p>
-              )
-            ) : (
-              <>
-                <LedgerReadout ledger={reaction.toll} describe="toll" />
-                {shortSlots.length > 0 ? (
-                  <p className="reaction__short">
-                    Starved at <SlotRun slots={shortSlots} />.
+            {form.condition ? (
+              // `null` only for a cold circle, which is neither met nor failed.
+              <div className={`reaction__condition reaction__condition--${verdict}`}>
+                <p className="reaction__conditionHead">{CONDITION_HEAD[verdict]}</p>
+                <p className="reaction__conditionText">{form.condition.statement}</p>
+                {reaction.conditionMet === null ? null : (
+                  <p className="reaction__conditionCost">
+                    {LOSS_RELIEF_RULE[form.condition.loss][reaction.conditionMet ? 'spared' : 'doubled']}
                   </p>
-                ) : null}
-              </>
-            )}
-
+                )}
+              </div>
+            ) : null}
           </div>
 
-          <p className="reaction__bled">
-            <span>Bled in transit</span>
-            <span className="ledger__amount">{reaction.bledTotal}</span>
-          </p>
-          <div className="reaction__bledBars" aria-hidden="true">
-            {ledgerEntries(reaction.bled).map(([currency, amount]) => (
-              <span
-                key={currency}
-                style={
-                  {
-                    flexGrow: amount,
-                    '--bar-hue': CURRENCY_META[currency].hue,
-                  } as CSSProperties
-                }
-              />
-            ))}
-          </div>
+          {reaction.filled === 0 ? (
+            <p className="reaction__empty">
+              The circle is cold.
+            </p>
+          ) : (
+            <>
+              <div className="reaction__block">
+                <h3 className="reaction__heading">
+                  Manifestation
+                  <span className="reaction__total">{reaction.manifestationTotal}</span>
+                </h3>
+                {reaction.manifestationTotal === 0 ? (
+                  <p className="reaction__none">
+                    Nothing leaves the ring. The circle consumes everything it makes, and does nothing.
+                  </p>
+                ) : (
+                  <LedgerReadout ledger={reaction.manifestation} describe="vent" />
+                )}
+              </div>
+
+              <div className={`reaction__block${reaction.tollTotal > 0 ? ' reaction__block--toll' : ''}`}>
+                <h3 className="reaction__heading">
+                  Toll
+                  <span className="reaction__total">{reaction.tollTotal}</span>
+                </h3>
+                {reaction.tollTotal === 0 ? (
+                  stintedSlots.length > 0 ? (
+                    <p className="reaction__none">
+                      Nothing is charged to you, but the ring did not feed itself. Stinted at{' '}
+                      <SlotRun slots={stintedSlots} />. Each gave back only the share it was fed.
+                    </p>
+                  ) : (
+                    <p className="reaction__none">
+                      The ring supplies itself. This casting costs the caster nothing.
+                    </p>
+                  )
+                ) : (
+                  <>
+                    <LedgerReadout ledger={reaction.toll} describe="toll" />
+                    {shortSlots.length > 0 ? (
+                      <p className="reaction__short">
+                        Starved at <SlotRun slots={shortSlots} />.
+                      </p>
+                    ) : null}
+                  </>
+                )}
+
+              </div>
+
+              <p className="reaction__bled">
+                <span>Bled in transit</span>
+                <span className="ledger__amount">{reaction.bledTotal}</span>
+              </p>
+              <div className="reaction__bledBars" aria-hidden="true">
+                {ledgerEntries(reaction.bled).map(([currency, amount]) => (
+                  <span
+                    key={currency}
+                    style={
+                      {
+                        flexGrow: amount,
+                        '--bar-hue': CURRENCY_META[currency].hue,
+                      } as CSSProperties
+                    }
+                  />
+                ))}
+              </div>
+            </>
+          )}
+
+          <details className="reaction__laws" hidden={true}>
+            <summary>The {LAWS.length} laws</summary>
+            <ol>
+              {LAWS.map((law) => (
+                <li key={law.title}>
+                  <strong>{law.title}.</strong> {law.body}
+                </li>
+              ))}
+            </ol>
+          </details>
         </>
       )}
-
-      <details className="reaction__laws" hidden={true}>
-        <summary>The {LAWS.length} laws</summary>
-        <ol>
-          {LAWS.map((law) => (
-            <li key={law.title}>
-              <strong>{law.title}.</strong> {law.body}
-            </li>
-          ))}
-        </ol>
-      </details>
     </section>
   )
 }

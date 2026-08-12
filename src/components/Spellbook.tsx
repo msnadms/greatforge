@@ -212,9 +212,6 @@ function BookEditor() {
         <label className="field field--grow">
           <span className="field__label">
             {draft.form}
-            <span className="book__count">
-              {reaction.filled}/{RING_SLOT_COUNT} reagents
-            </span>
           </span>
           <textarea
             className="book__text"
@@ -225,7 +222,6 @@ function BookEditor() {
         </label>
 
         <div className="book__actions">
-          <span className="book__status">{dirty ? 'Unsaved changes' : 'Saved'}</span>
           <button type="button" className="btn btn--primary" onClick={() => void saveDraft()}>
             Inscribe
           </button>

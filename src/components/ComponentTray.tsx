@@ -20,6 +20,15 @@ import {
 import { ComponentEditor } from './ComponentEditor'
 import { LedgerLine } from './LedgerLine'
 
+const VIEWS = ['list', 'grid'] as const
+
+type View = (typeof VIEWS)[number]
+
+const VIEW_LABEL: Record<View, string> = {
+  list: 'List',
+  grid: 'Grid',
+}
+
 const SORTS = ['name', 'role', 'rarity', 'gives', 'asks'] as const
 
 type Sort = (typeof SORTS)[number]
@@ -103,6 +112,7 @@ export function ComponentTray() {
   const { components, armedComponentId, armComponent, deleteComponent, loading, mode, draft } =
     useWorkshop()
   const { startDrag } = useDrag()
+  const [view, setView] = useState<View>('list')
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
   const [sort, setSort] = useState<Sort>('name')
@@ -181,10 +191,23 @@ export function ComponentTray() {
   return (
     <section className="panel tray">
       <div className="tray__head">
-        <h2 className="panel__title">Codex of components</h2>
-        <button type="button" className="btn btn--small" onClick={() => openEditor(null)}>
+        <h2 className="panel__title">Codex</h2>
+        <div className="tray__viewToggle" role="group" aria-label="Codex view">
+          {VIEWS.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`tray__viewStep${option === view ? ' tray__viewStep--active' : ''}`}
+              aria-pressed={option === view}
+              onClick={() => setView(option)}
+            >
+              {VIEW_LABEL[option]}
+            </button>
+          ))}
+          <button type="button" className="btn btn--small" onClick={() => openEditor(null)}>
           + New
         </button>
+        </div>
       </div>
 
       <div className="tray__filters">
@@ -249,63 +272,72 @@ export function ComponentTray() {
             : 'Nothing here. Add a component to begin.'}
         </p>
       ) : (
-        <ul className="tray__list">
+        <ul className={`tray__list${view === 'grid' ? ' tray__list--grid' : ''}`}>
           {visible.map((component) => {
             const armed = component.id === armedComponentId
             const role = describeRole(component)
+            const demands = scaledLedgers.get(component.id)?.demands ?? {}
+            const yields = scaledLedgers.get(component.id)?.yields ?? {}
             return (
               <li
                 key={component.id}
-                className={`tray__item${armed ? ' tray__item--armed' : ''}${canPlace ? '' : ' tray__item--inert'}`}
+                className={`tray__item${view === 'grid' ? ' tray__item--card' : ''}${armed ? ' tray__item--armed' : ''}${canPlace ? '' : ' tray__item--inert'}`}
                 style={{ '--slot-hue': componentHue(component) } as CSSProperties}
                 onPointerDown={(event) => handlePointerDown(event, component)}
                 onClick={() => {
                   if (canPlace) armComponent(armed ? null : component.id)
                 }}
               >
-                <div className="tray__itemHead">
-                  <span className="tray__name">{component.name}</span>
-                  <span className="tray__role" title={ROLE_HINT[role]}>
-                    {role}
+                {view === 'grid' ? (
+                  // The same compact card a filled, editable slot on the circle draws:
+                  // name and ledger only, no prose.
+                  <span className="slot__body">
+                    <span className="slot__name">{component.name}</span>
+                    <LedgerLine demands={demands} yields={yields} labels="none" />
                   </span>
-                </div>
+                ) : (
+                  <>
+                    <div className="tray__itemHead">
+                      <span className="tray__name">{component.name}</span>
+                      <span className="tray__role" title={ROLE_HINT[role]}>
+                        {role}
+                      </span>
+                    </div>
 
-                <LedgerLine
-                  demands={scaledLedgers.get(component.id)?.demands ?? {}}
-                  yields={scaledLedgers.get(component.id)?.yields ?? {}}
-                  labels="full"
-                />
+                    <LedgerLine demands={demands} yields={yields} labels="full" />
 
-                <p className="tray__desc">{component.description}</p>
+                    <p className="tray__desc">{component.description}</p>
 
-                <div className="tray__meta">
-                  <span className="tray__rarity">{component.rarity}</span>
-                </div>
+                    <div className="tray__meta">
+                      <span className="tray__rarity">{component.rarity}</span>
+                    </div>
 
-                <div className="tray__actions">
-                  <button
-                    type="button"
-                    className="btn btn--small"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      openEditor(component)
-                    }}
-                  >
-                    Edit
-                  </button>
-                  <button
-                    type="button"
-                    className="btn btn--small btn--danger"
-                    onClick={(event) => {
-                      event.stopPropagation()
-                      if (confirm(`Remove "${component.name}" from the codex?`)) {
-                        void deleteComponent(component.id)
-                      }
-                    }}
-                  >
-                    Remove
-                  </button>
-                </div>
+                    <div className="tray__actions">
+                      <button
+                        type="button"
+                        className="btn btn--small"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          openEditor(component)
+                        }}
+                      >
+                        Edit
+                      </button>
+                      <button
+                        type="button"
+                        className="btn btn--small btn--danger"
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          if (confirm(`Remove "${component.name}" from the codex?`)) {
+                            void deleteComponent(component.id)
+                          }
+                        }}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  </>
+                )}
               </li>
             )
           })}

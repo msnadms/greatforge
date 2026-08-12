@@ -11,6 +11,7 @@ import { buildSeedComponents } from '../src/data/seedComponents'
 import { buildConditionContext, computeReaction } from '../src/lib/reaction'
 import { CURRENCY_META, describeRole } from '../src/data/currencies'
 import { FORM_META, conditionRelief } from '../src/data/spellForms'
+import { NEAR_OPTIMAL_RINGS, NET_OPTIMIZED_FORMS, type NearOptimalRing } from './nearOptimalRings'
 import {
   CASTER_LEVELS,
   CURRENCIES,
@@ -33,6 +34,14 @@ import {
 
 /** The form every measurement of the circle itself is taken under. */
 const PLAIN: SpellForm = 'prayer'
+
+/**
+ * `--near-optimal` skips the random/fed sampling below (the slow part) and
+ * runs only `nearOptimalReport()`, against the 70 hand-picked rings in
+ * `nearOptimalRings.ts`. Default (no flag) runs everything, near-optimal
+ * report included, exactly as before.
+ */
+const NEAR_OPTIMAL_ONLY = process.argv.includes('--near-optimal')
 
 let seq = 0
 
@@ -206,7 +215,10 @@ function resolve(ring: Placement[], form: SpellForm = PLAIN, level: CasterLevel 
     released += ledgerTotal(slot.released)
     received += ledgerTotal(slot.received)
   }
-  const accounted = reaction.manifestationTotal + reaction.bledTotal + received
+  // A met elegy draws its small grief bonus from the caster's toll rather than
+  // from released current, so take that declared external contribution back
+  // out before checking the circle's ordinary conservation law.
+  const accounted = reaction.manifestationTotal - reaction.griefBonusTotal + reaction.bledTotal + received
   if (accounted !== released) {
     throw new Error(`conservation broken: released ${released}, accounted ${accounted}`)
   }
@@ -285,6 +297,9 @@ function record(tally: Tally, key: string, row: Row): void {
   }
 }
 
+// Everything from here down is the slow, sampled part of the harness — skipped
+// entirely under `--near-optimal`, which only wants the curated report below.
+if (!NEAR_OPTIMAL_ONLY) {
 for (let reagents = 1; reagents <= RING_SLOT_COUNT; reagents++) {
   const key = `${reagents} reagents`
   for (let i = 0; i < PER_COUNT; i++) record(byCount, key, resolve(randomRing(reagents)))
@@ -870,3 +885,100 @@ for (const form of SPELL_FORMS) {
       String(r.bledTotal).padStart(8),
   )
 }
+} // NEAR_OPTIMAL_ONLY
+
+// --------------------------------------------------------- near-optimal rings
+
+/**
+ * Hand-picked rings — 10 per (form, level) — hill-climbed by
+ * `sim/generateNearOptimal.ts` and reported under their own form and level.
+ * `NET_OPTIMIZED_FORMS` (elegy, ward, benediction) are climbed against net
+ * at level 5, one row each; every other form is climbed once per caster
+ * level, against the most manifestation a ring can deliver while keeping
+ * toll under that level's cap (5 at level 1, scaling to 15 at level 5).
+ * Where `formsOnTheirOwnGround` samples the *shape* a form rewards at random
+ * and averages over it, this is a fixed, reproducible set of rings a
+ * genuinely skilled player would actually place, not merely a ring that
+ * starves nowhere (`fedRing`'s bar): the climb searches directly for the
+ * best output a caster could afford, condition included, rather than
+ * stopping at "nothing shortfalls."
+ */
+function nearOptimalReport(): void {
+  const byFormLevel = new Map<string, NearOptimalRing[]>()
+  const key = (form: SpellForm, level: CasterLevel) => `${form}:${level}`
+  for (const entry of NEAR_OPTIMAL_RINGS) {
+    const k = key(entry.form, entry.level)
+    const list = byFormLevel.get(k) ?? []
+    list.push(entry)
+    byFormLevel.set(k, list)
+  }
+
+  const resolveRing = (entry: NearOptimalRing): Placement[] =>
+    entry.placements.map(({ slotIndex, component }) => {
+      const found = CATALOG.find((c) => c.name === component)
+      if (!found) throw new Error(`near-optimal ring names an unknown reagent: ${component}`)
+      return { slotIndex, component: found }
+    })
+
+  const rows: { form: SpellForm; level: CasterLevel }[] = SPELL_FORMS.flatMap((form) =>
+    NET_OPTIMIZED_FORMS.includes(form)
+      ? [{ form, level: 5 as CasterLevel }]
+      : CASTER_LEVELS.map((level) => ({ form, level })),
+  )
+
+  console.log('\n=== near-optimal rings per form (sim/nearOptimalRings.ts) ===')
+  console.log(
+    'form               ' +
+      ['manif', 'toll', 'net', 'bled', 'met'].map((h) => h.padStart(8)).join(''),
+  )
+  for (const { form, level } of rows) {
+    const entries = byFormLevel.get(key(form, level)) ?? []
+    const label = NET_OPTIMIZED_FORMS.includes(form) ? form : `${form} @ lvl ${level}`
+    if (entries.length === 0) {
+      console.log(`${label.padEnd(19)}NO RINGS GENERATED FOR THIS FORM/LEVEL`)
+      continue
+    }
+    let manifestation = 0
+    let toll = 0
+    let bled = 0
+    let met = 0
+    for (const entry of entries) {
+      const r = computeReaction(resolveRing(entry), form, level)
+      manifestation += r.manifestationTotal
+      toll += r.tollTotal
+      bled += r.bledTotal
+      if (r.conditionMet) met++
+    }
+    const n = entries.length
+    const avg = (total: number) => (total / n).toFixed(1).padStart(8)
+    console.log(
+      label.padEnd(19) +
+        avg(manifestation) +
+        avg(toll) +
+        avg(manifestation - toll) +
+        avg(bled) +
+        `${Math.round((met / n) * 100)}%`.padStart(8),
+    )
+  }
+
+  const NAMED_SLOTS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
+  console.log('\n--- each ring, in full ---')
+  for (const { form, level } of rows) {
+    const label = NET_OPTIMIZED_FORMS.includes(form) ? form : `${form} @ level ${level}`
+    console.log(`\n${label}:`)
+    for (const entry of byFormLevel.get(key(form, level)) ?? []) {
+      const r = computeReaction(resolveRing(entry), form, level)
+      const mark = r.conditionMet === null ? '  -' : r.conditionMet ? 'met' : 'fail'
+      const shown = entry.placements
+        .map((p) => `${NAMED_SLOTS[p.slotIndex]}:${p.component}`)
+        .join(' ')
+      console.log(
+        `  manif ${String(r.manifestationTotal).padStart(3)}  toll ${String(r.tollTotal).padStart(
+          3,
+        )}  ${mark}  ${shown}`,
+      )
+    }
+  }
+}
+
+nearOptimalReport()

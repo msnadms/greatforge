@@ -1248,6 +1248,21 @@
   min-height: 62px;
   align-items: center;
   justify-content: center;
+  text-align: center;
+}
+
+/*
+ * `.slot__body`'s children stretch to its full width by default (fine on the
+ * circle, where the card is left-anchored past the rune gutter). Centered here
+ * instead, or whichever of name/ledger is narrower reads flush left rather than
+ * centered under the wider one.
+ */
+.tray__item--card .slot__body {
+  align-items: center;
+}
+
+.tray__item--card .ledgerLine {
+  justify-content: center;
 }
 
 .tray__itemHead {

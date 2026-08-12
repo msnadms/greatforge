@@ -1,5 +1,5 @@
 import { isRelay } from '../data/currencies'
-import { FORM_META, conditionRelief, type ConditionContext } from '../data/spellForms'
+import { ELEGY_GRIEF, FORM_META, conditionRelief, type ConditionContext } from '../data/spellForms'
 import {
   LEVEL_POWER,
   RING_SLOT_COUNT,
@@ -101,6 +101,8 @@ export interface Reaction {
   /** Lost to transit and never claimed. The circle's inefficiency, as noise and glow. */
   bled: Ledger
   manifestationTotal: number
+  /** Extra manifestation a met elegy draws from toll beyond its first unavoidable wound. */
+  griefBonusTotal: number
   tollTotal: number
   bledTotal: number
 }
@@ -135,6 +137,7 @@ function emptyReaction(form: SpellForm): Reaction {
     toll: {},
     bled: {},
     manifestationTotal: 0,
+    griefBonusTotal: 0,
     tollTotal: 0,
     bledTotal: 0,
   }
@@ -169,8 +172,8 @@ export function buildConditionContext(placements: Placement[], level: CasterLeve
  *
  * `form` decides two things: the underfed rule (credit vs measure, see
  * `FORM_META`) and which loss its condition spares or doubles (transit,
- * spill, or both). It can never add — every setting only lets a loss stand,
- * removes it, or deepens it. See `data/spellForms.ts`.
+ * spill, or both). A met elegy then has one small, capped bonus drawn from
+ * toll beyond its unavoidable first wound. See `data/spellForms.ts`.
  *
  * `level` belongs to the spell, not the caster. It scales every placed
  * reagent's demand and yield by `LEVEL_POWER[level]` before the walk reads
@@ -548,6 +551,36 @@ export function computeReaction(
     }
   }
 
+  /**
+   * A met elegy has no source, so its first underfed demand is unavoidable.
+   * Toll beyond that wound strengthens the manifestation a little, then stops:
+   * the effect is distributed over what the ring already made so it never
+   * invents a new currency or makes a cold ring speak.
+   */
+  let griefBonusTotal = 0
+  if (form === 'elegy' && relief.met && ledgerTotal(manifestation) > 0) {
+    const floor = Math.round(ELEGY_GRIEF.baseToll * LEVEL_POWER[level])
+    griefBonusTotal = Math.min(
+      ELEGY_GRIEF.maximumManifestation,
+      Math.floor(Math.max(0, ledgerTotal(toll) - floor) / ELEGY_GRIEF.tollPerManifestation),
+    )
+
+    if (griefBonusTotal > 0) {
+      const total = ledgerTotal(manifestation)
+      const shares = ledgerEntries(manifestation).map(([currency, amount]) => {
+        const exact = (amount * griefBonusTotal) / total
+        return { currency, amount: Math.floor(exact), remainder: exact - Math.floor(exact) }
+      })
+      let assignedBonus = shares.reduce((sum, share) => sum + share.amount, 0)
+      for (const share of [...shares].sort((a, b) => b.remainder - a.remainder)) {
+        if (assignedBonus >= griefBonusTotal) break
+        share.amount++
+        assignedBonus++
+      }
+      for (const share of shares) addToLedger(manifestation, share.currency, share.amount)
+    }
+  }
+
   return {
     form,
     conditionMet: relief.met,
@@ -559,6 +592,7 @@ export function computeReaction(
     toll,
     bled,
     manifestationTotal: ledgerTotal(manifestation),
+    griefBonusTotal,
     tollTotal: ledgerTotal(toll),
     bledTotal: ledgerTotal(bled),
   }

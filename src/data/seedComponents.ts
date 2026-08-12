@@ -160,8 +160,10 @@ const SEEDS: SeedSpec[] = [
   },
 
   // ---- Converters: one currency traded for another ----
-  // A handful profit (the four below, plus Frankincense further down); most
-  // cost more than they return. A full ring needs at least one of them.
+  // A handful profit (the four below, plus Frankincense and Silt Trap further
+  // down); most cost more than they return. A full ring needs at least one of
+  // them. Frankincense and Silt Trap are mass's only two non-rare routes, and
+  // were repriced together so mass would not depend on a single reagent.
   {
     name: 'Hoarfrost',
     description:
@@ -270,7 +272,7 @@ const SEEDS: SeedSpec[] = [
     name: 'Frankincense',
     description:
       'Beads of pale resin from a cut Boswellia trunk, hardened where they ran. Scentless in the hand. Set on a coal, it burns almost entirely to a thick white smoke that hangs low and takes a long while to clear. Most of that smoke condenses back into a resin heavier than what fed the coal.',
-    demands: { heat: 14 },
+    demands: { heat: 12 },
     yields: { mass: 16 },
     rarity: 'uncommon',
   },
@@ -325,9 +327,9 @@ const SEEDS: SeedSpec[] = [
   {
     name: 'Silt Trap',
     description:
-      'A stone-lined basin set where a fast leat slows and widens before the wheel. The current drops the grit and sand it carries as it slackens, but most of what the water was carrying rides on through before the basin can catch it.',
-    demands: { motion: 14 },
-    yields: { mass: 12 },
+      'A stone-lined basin set where a fast leat slows and widens before the wheel. The current drops the grit and sand it carries as it slackens, and slack water already loose with silt settles into the same basin overnight, well beyond what the current itself brought down.',
+    demands: { motion: 12 },
+    yields: { mass: 14 },
     rarity: 'common',
   },
   {

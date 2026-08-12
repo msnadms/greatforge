@@ -109,7 +109,11 @@ export function ReactionPanel() {
                 <p className="reaction__conditionText">{form.condition.statement}</p>
                 {reaction.conditionMet === null ? null : (
                   <p className="reaction__conditionCost">
-                    {LOSS_RELIEF_RULE[form.condition.loss][reaction.conditionMet ? 'spared' : 'doubled']}
+                    {
+                      LOSS_RELIEF_RULE[form.condition.loss][
+                        reaction.conditionMet ? (form.condition.reward ?? 'spared') : 'doubled'
+                      ]
+                    }
                   </p>
                 )}
               </div>
@@ -132,7 +136,14 @@ export function ReactionPanel() {
                     Nothing leaves the ring. The circle consumes everything it makes, and does nothing.
                   </p>
                 ) : (
-                  <LedgerReadout ledger={reaction.manifestation} describe="vent" />
+                  <>
+                    <LedgerReadout ledger={reaction.manifestation} describe="vent" />
+                    {reaction.griefBonusTotal > 0 ? (
+                      <p className="reaction__short">
+                        Grief made {reaction.griefBonusTotal} more manifestation out of the toll beyond the first wound.
+                      </p>
+                    ) : null}
+                  </>
                 )}
               </div>
 

@@ -56,11 +56,17 @@ export const RING_SLOT_COUNT = 8
  * ring — a form may only decide where losses fall. See the seventh law in
  * `data/currencies.ts`.
  */
-export type LossRelief = 'spared' | 'plain' | 'doubled'
+export type LossRelief = 'spared' | 'plain' | 'halved' | 'doubled'
 
-/** What a crossing costs under a relief: nothing, its stated price, or twice it. */
+/**
+ * What a crossing costs under a relief: nothing, half its stated price, its
+ * stated price, or twice it. `halved` exists for the ward, whose condition
+ * asks for a mostly-open ring rather than the invocation's closed one and so
+ * earns a smaller cut of the lap rather than the whole of it.
+ */
 export function transitScale(relief: LossRelief): number {
   if (relief === 'spared') return 0
+  if (relief === 'halved') return 0.5
   return relief === 'doubled' ? 2 : 1
 }
 
@@ -84,7 +90,9 @@ export function transitScale(relief: LossRelief): number {
 export function completionFactor(filled: number, spill: LossRelief): number {
   if (spill === 'spared') return 1
   const share = Math.max(0, Math.min(filled, RING_SLOT_COUNT)) / RING_SLOT_COUNT
-  return spill === 'doubled' ? share * share : share
+  if (spill === 'doubled') return share * share
+  if (spill === 'halved') return (share + 1) / 2
+  return share
 }
 
 /**

@@ -94,9 +94,9 @@ export const CURRENCY_LIST: CurrencyMeta[] = CURRENCIES.map((c) => CURRENCY_META
  * The whole system, stated. A hard magic is one the reader can do arithmetic in,
  * so these are shown in the app rather than kept in a designer's notebook.
  *
- * Six of the eight hold without exception. The seventh bounds the two things a
- * form is permitted to change — the underfed rule and which loss its condition
- * spares or doubles — and any law a form can touch points at it. The eighth
+ * Six of the eight hold without exception. The seventh bounds the three things a
+ * form is permitted to change — the underfed rule, which loss its condition
+ * spares or doubles, and elegy's capped grief — and any law a form can touch points at it. The eighth
  * just says what number a reagent's ledger holds before the walk reads it, so
  * it needed nothing above it to bend.
  *
@@ -127,11 +127,11 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'A reagent the ring underfeeds is paid for, or it gives less',
-    body: 'Every demand the ring cannot meet is settled one of two ways, and the form decides which. Under a volatile form (prayer, elegy, litany, invocation, dirge) the reagent reacts in full and the shortfall is drawn out of the caster. That toll is the only thing a casting ever costs the body, so a circle that feeds itself is free to speak at any size. Under a stable form (ward, benediction) it hands back only the share of its yield the ring fed it, rounded down, and nothing is charged.',
+    body: 'Every demand the ring cannot meet is settled one of two ways, and the form decides which. Under a volatile form (prayer, elegy, litany, invocation, dirge) the reagent reacts in full and the shortfall is drawn out of the caster. That toll is the only thing a casting ever costs the body, so a circle that feeds itself is free to speak at any size. A met elegy turns every three units beyond its first unavoidable wound into one extra unit of its existing manifestation, to a maximum of eight. Under a stable form (ward, benediction) a reagent hands back only the share of its yield the ring fed it, rounded down, and nothing is charged.',
   },
   {
-    title: 'A form asks one thing, and can only ever spare a loss',
-    body: 'Every form but the prayer states one condition, printed with the rite. Meet it and the loss it names is waived — the crossings, the spill at the mouth, or both; fail it and that same loss doubles, to eight units across a gap and four across a reagent, or the share squared, or both together. No form adds: where a loss falls is all a form decides, so the first law holds in all seven.',
+    title: 'A form asks one thing, and changes only what it names',
+    body: 'Every form but the prayer states one condition, printed with the rite. Meet it and the loss it names is cut — the crossings, the spill at the mouth, or both — by half or in full, depending on the form; fail it and that same loss doubles, to eight units across a gap and four across a reagent, or the share squared, or both together. A met elegy alone can draw a small, capped extra manifestation from its toll; every other form only moves where a loss falls and how much of it.',
   },
   {
     title: 'A working commands only some of a reagent',

@@ -13,7 +13,7 @@ import {
 /**
  * The seven forms a working may be spoken in.
  *
- * **A form is an input to the resolver.** It decides two things and no others:
+ * **A form is an input to the resolver.** Every form decides two things:
  *
  *  - **What an underfed reagent does.** Under a crediting form it reacts in full
  *    anyway and the difference comes out of the caster; under a measuring form it
@@ -23,13 +23,12 @@ import {
  *    condition governs. Meet it and the named loss is spared; fail it and that
  *    same loss is dealt double. See `condition`.
  *
- * **A form can never make units.** Both powers only ever move where a loss falls,
- * never create one, which keeps the first law true and the conservation check in
- * `sim/balance.ts` balancing. There is no fourth `LossRelief` that adds.
+ * A met elegy alone has a third, capped effect: its toll beyond the first wound
+ * adds a little force to manifestation. The bonus is current drawn from the
+ * caster, not from the reagents; there is no fourth `LossRelief`.
  *
- * A form is a choice of setting, not a branch in the resolver: `computeReaction`
- * has one branch for the underfed rule and two numbers for the condition, shared
- * by all seven forms. Do not reintroduce per-form knobs.
+ * The six ordinary forms are settings, not resolver branches. Elegy's grief is
+ * the one narrow exception; do not add further per-form knobs.
  */
 export interface SpellFormMeta {
   form: SpellForm
@@ -86,20 +85,37 @@ export interface FormCondition {
    *
    * `transit` is what the current pays to cross into a slot; sparing it is worth
    * at most one lap, so the forms that spare it reward a ring you have actually
-   * filled. `spill` is what leaks out of the holes at the mouth; sparing it is
-   * worth nothing on a closed ring and doubles a sparse one's delivery, so the
-   * forms that spare it are the small-circle forms.
+   * filled. `spill` is what leaks out of the holes at the mouth — but sparing or
+   * doubling it alone does nothing once the ring is closed, since a full ring
+   * never spills regardless of the condition. No form spares `spill` by itself
+   * for exactly that reason: litany and benediction both shipped that way and a
+   * caster could dodge either condition for free by ignoring it and filling
+   * every slot, netting the same output a caster who actually met the
+   * condition did.
    *
-   * `both` exists for dirge alone, whose condition (the sink's demand actually
-   * met, resolved via `ConditionContext` rather than read off the ring's shape)
-   * is a harder bar and priced accordingly: meeting it waives both losses,
-   * missing it doubles both.
+   * `both` waives or doubles transit and spill together, which is what makes a
+   * spill-flavoured condition actually bite: closing the ring to dodge the
+   * doubled spill still leaves every crossing paying the doubled transit.
+   * Dirge and elegy earn it on a bar harder than most — see their entries in
+   * `FORM_META` below; litany and benediction earn it for the reason above.
+   * See CLAUDE.md's "Spell forms are behavioural" for the numbers that caught
+   * the loophole.
    *
    * There is no value that spares a toll — a reagent releasing a yield the ring
    * never fed it would make units out of nothing, and `underfed: 'measure'` is
    * the only settlement of that the first law permits.
    */
   loss: 'transit' | 'spill' | 'both'
+  /**
+   * What meeting the condition earns, on the loss `loss` names. Defaults to
+   * `spared` — most forms trade an outright waiver for their condition.
+   * `halved` exists where a form's bar is markedly easier than the full-spare
+   * forms it would otherwise match: the ward's mostly-open ring against
+   * invocation's fully closed one, and litany's two-relay bar against the same
+   * full spare invocation earns for filling every slot. Failing the condition
+   * always doubles, regardless of what meeting it would have earned.
+   */
+  reward?: 'spared' | 'halved'
   /**
    * Whether the ring as placed satisfies `statement`.
    *
@@ -166,6 +182,21 @@ export const UNDERFED_RULE: Record<SpellFormMeta['underfed'], string> = {
 }
 
 /**
+ * Elegy turns grief beyond the rite's unavoidable first wound into a small,
+ * capped intensification. The floor is the least level-five demand in the
+ * starter catalog (Slow Match); `reaction.ts` scales it with the working.
+ *
+ * This is deliberately additive rather than a multiplier. A multiplier makes
+ * the largest, most underfed elegies grow fastest; this gives a costly rite a
+ * little more force without making an 80-toll outlier the only expert play.
+ */
+export const ELEGY_GRIEF = {
+  baseToll: 10,
+  tollPerManifestation: 3,
+  maximumManifestation: 8,
+} as const
+
+/**
  * What the condition costs or saves, stated for the panel. Indexed by
  * `FormCondition.loss` and then by the relief the ring earned.
  *
@@ -178,6 +209,9 @@ export const UNDERFED_RULE: Record<SpellFormMeta['underfed'], string> = {
  */
 const TRANSIT_RELIEF: Record<Exclude<LossRelief, 'plain'>, string> = {
   spared: 'Crossings are free.',
+  halved:
+    `Crossings cost half: ${TRANSIT_LOSS_GAP * transitScale('halved')} across a gap, ` +
+    `${TRANSIT_LOSS_REAGENT * transitScale('halved')} across a reagent.`,
   doubled:
     `Crossings cost double: ${TRANSIT_LOSS_GAP * transitScale('doubled')} across a gap, ` +
     `${TRANSIT_LOSS_REAGENT * transitScale('doubled')} across a reagent.`,
@@ -185,6 +219,10 @@ const TRANSIT_RELIEF: Record<Exclude<LossRelief, 'plain'>, string> = {
 
 const SPILL_RELIEF: Record<Exclude<LossRelief, 'plain'>, string> = {
   spared: 'Nothing spills. The ring delivers everything it still holds.',
+  // No form currently spares spill by half; kept for type completeness and so
+  // a future form can spend `reward: 'halved'` on either loss without a new
+  // sentence to write.
+  halved: 'Half of what would have spilled reaches the mouth after all.',
   doubled: 'The spill is squared. Four reagents deliver a quarter, not a half.',
 }
 
@@ -198,6 +236,7 @@ export const LOSS_RELIEF_RULE: Record<
   // can't drift from the two entries above the way a hand-copied pair could.
   both: {
     spared: `${TRANSIT_RELIEF.spared} ${SPILL_RELIEF.spared}`,
+    halved: `${TRANSIT_RELIEF.halved} ${SPILL_RELIEF.halved}`,
     doubled: `${TRANSIT_RELIEF.doubled} ${SPILL_RELIEF.doubled}`,
   },
 }
@@ -251,9 +290,12 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     underfed: 'credit',
     condition: {
       statement: 'Slot I is empty, and no source stands anywhere in the ring.',
-      loss: 'spill',
-      // With no source anywhere, the first reagent the current reaches always
-      // starves, guaranteeing a toll — that fixed price is what buys the spared spill.
+      loss: 'both',
+    // With no source anywhere, the first reagent the current reaches always
+    // starves, guaranteeing a toll — that fixed price buys both reliefs:
+    // nothing pays to cross, and whatever the ring still holds at the mouth
+    // leaves whole rather than in proportion to how closed it is. Excess toll
+    // also intensifies a met elegy by `ELEGY_GRIEF`, settled in the resolver.
       test: (placements) =>
         placements.length > 0 &&
         !placements.some((placement) => placement.slotIndex === 0) &&
@@ -271,10 +313,18 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     underfed: 'credit',
     condition: {
       statement: 'At least two relays stand in the ring.',
-      loss: 'spill',
+      loss: 'both',
       // A relay gives back exactly what it was given — the mechanical "echo" the
       // gloss's "said through twice" describes. A role rather than a shape, so the
       // other six slots pack as densely as any other form's.
+      //
+      // `both`, not `spill` alone: sparing spill does nothing on a closed ring,
+      // so a `spill`-only litany let a caster ignore the condition entirely and
+      // just fill the ring, matching a ring that actually seated two relays.
+      // Spending the transit half too means that dodge still pays the doubled
+      // lap. `halved`, not the full spare invocation earns: two relays is a far
+      // easier bar than filling all eight slots.
+      reward: 'halved',
       test: (placements) => slotsWithRole(placements, 'relay').length >= 2,
       // Wherever the relays stand. A ring with fewer than two marks nothing.
       slots: (placements) => slotsWithRole(placements, 'relay'),
@@ -335,7 +385,11 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
       loss: 'transit',
       // Requires the room behind the door to be mostly empty, so the ward prices
       // like the small-circle forms rather than shadowing the invocation's full
-      // ring at a toll it (being `measure`) can never actually pay.
+      // ring at a toll it (being `measure`) can never actually pay. Earns half
+      // the lap's cost rather than all of it — the ward asks for less than the
+      // invocation's closed ring, so it is owed less than the invocation's free
+      // lap.
+      reward: 'halved',
       test: (placements) => {
         const filled = occupancy(placements)
         if (!filled[0] || !filled[RING_SLOT_COUNT - 1]) return false
@@ -356,9 +410,15 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     underfed: 'measure',
     condition: {
       statement: 'No more than three reagents stand in the ring.',
-      loss: 'spill',
+      loss: 'both',
       // The small-circle form: three reagents deliver all they hold instead of a
       // fraction. The price is never the body, only the reagents left unplaced.
+      //
+      // `both`, not `spill` alone: a `spill`-only benediction cost a wide ring
+      // nothing for ignoring the cap, since a full ring never spills regardless
+      // — the honest three-reagent build was then strictly worse than just
+      // filling the ring and eating the "unmet" penalty. Spending the transit
+      // half too means that wide ring pays a doubled lap for the dodge.
       test: (placements) => placements.length > 0 && placements.length <= 3,
       // The rule counts reagents, so it marks the ones being counted.
       slots: filledSlots,
@@ -387,7 +447,7 @@ export function conditionRelief(
   }
 
   const met = condition.test(placements, context)
-  const relief: LossRelief = met ? 'spared' : 'doubled'
+  const relief: LossRelief = met ? (condition.reward ?? 'spared') : 'doubled'
   return {
     met,
     transit: condition.loss === 'transit' || condition.loss === 'both' ? relief : 'plain',

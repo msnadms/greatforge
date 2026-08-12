@@ -4,7 +4,7 @@ import { CURRENCY_META, describeLedger } from '../data/currencies'
 import { FORM_LIST, FORM_META, UNDERFED_RULE } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
-import { ledgerEntries, RING_SLOT_COUNT, type SpellForm } from '../types/worldbuilding'
+import { ledgerEntries, type SpellForm } from '../types/worldbuilding'
 import { LevelControl } from './LevelControl'
 
 /** A point on the number circle, by angle in degrees clockwise from due right. */
@@ -148,7 +148,7 @@ function BookView() {
 }
 
 function BookEditor() {
-  const { draft, dirty, updateDraft, saveDraft, reaction } = useWorkshop()
+  const { draft, updateDraft, saveDraft, reaction } = useWorkshop()
   const [expanded, setExpanded] = useState<boolean>(false)
 
   return (

@@ -26,7 +26,7 @@ export function SignInScreen() {
             {error}
           </p>
         ) : (
-          <p className="gate__note">Your codex and workings are kept to your account.</p>
+          <p className="gate__note">Your codex and rites are kept to your account.</p>
         )}
       </div>
     </div>

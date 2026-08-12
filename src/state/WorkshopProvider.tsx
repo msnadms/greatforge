@@ -200,7 +200,7 @@ export function WorkshopProvider({
   const saveDraft = useCallback(async () => {
     const saved: Spell = {
       ...draft,
-      title: draft.title.trim() || 'Untitled working',
+      title: draft.title.trim() || 'Untitled rite',
       updatedAt: Date.now(),
     }
     const ok = await write('Could not inscribe the working', () => repository.saveSpell(saved))

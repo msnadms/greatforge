@@ -33,7 +33,7 @@ import type { WorkshopRepository } from './repository'
  * new catalog installed alongside whatever they already have — never over it,
  * so nothing they authored or edited is lost.
  */
-const SEED_VERSION = 10
+const SEED_VERSION = 14
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>

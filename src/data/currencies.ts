@@ -131,7 +131,7 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'A form asks one thing, and can only ever spare a loss',
-    body: 'Every form but the prayer states one condition, printed with the working. Meet it and the loss it names is waived — the crossings, the spill at the mouth, or both; fail it and that same loss doubles, to eight units across a gap and four across a reagent, or the share squared, or both together. No form adds: where a loss falls is all a form decides, so the first law holds in all seven.',
+    body: 'Every form but the prayer states one condition, printed with the rite. Meet it and the loss it names is waived — the crossings, the spill at the mouth, or both; fail it and that same loss doubles, to eight units across a gap and four across a reagent, or the share squared, or both together. No form adds: where a loss falls is all a form decides, so the first law holds in all seven.',
   },
   {
     title: 'A working commands only some of a reagent',

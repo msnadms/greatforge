@@ -17,20 +17,29 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              reagent that demands nothing can never be billed.
  *   Fuels      take a little and give a little more. Four within easy reach —
  *              one apiece in heat, motion and charge, plus Magnesium Ribbon
- *              carrying heat into light — plus Flywheel (`rare`) doubling up
- *              in motion. Together with the sources these are the only seven
- *              reagents that never cost anything to place, one short of a
- *              full ring.
+ *              carrying heat into light — plus three more at `rare`:
+ *              Flywheel doubling up in motion, Seed Crystal doing the same
+ *              in mass, and Sun-Cured Tinder carrying light back into heat.
+ *              Together with the sources, the four common/uncommon fuels are
+ *              the only seven reagents in the tuned envelope that never cost
+ *              anything to place, one short of a full ring — the `rare`
+ *              fuels sit outside that envelope by design (`sim/balance.ts`
+ *              excludes `rare`/`singular` from the checks this catalog is
+ *              tuned against).
  *   Converters trade one currency for another, mostly at a loss. A handful
  *              turn a real profit and are the reliable routes into mass and
  *              back into light and motion. Tungsten Foil (`singular`) reaches
- *              two currencies from one input at once.
+ *              two currencies from one input at once. A third `singular`
+ *              entry, the Trapped Antiproton, sits outside even that: a
+ *              deliberate outlier priced for scarcity of a different kind —
+ *              there is one of it, full stop — rather than for balance.
  *   Relays     give back the whole of what they take, so current crosses them
  *              for nothing — the wire of the circle. Quartz Filament
  *              (`singular`) carries two currencies at once, both at ceiling.
- *   Sinks      swallow and give nothing back. Two of them, both demanded by
- *              the dirge, which is spared the spill only while a sink stands
- *              in the ring and is fully fed.
+ *   Sinks      swallow and give nothing back. Three of them, one apiece in
+ *              heat, light and mass, all demanded by the dirge, which is
+ *              spared the spill only while a sink stands in the ring and is
+ *              fully fed.
  *
  * The numbers are tuned against facts about the resolver that are easy to miss:
  *
@@ -48,8 +57,9 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *  - Only seven reagents (three sources, four fuels) never cost anything to
  *    place, one short of a full ring — reaching slot VIII always means taking
  *    on at least one converter. Rarity does not track role: seven reagents are
- *    `rare` and two are `singular`, one-off reagents doing at a single slot
- *    what two `rare` reagents would together. See `sim/balance.ts`'s
+ *    `rare` and three are `singular` — two doing at a single slot what two
+ *    `rare` reagents would together, one an outlier kept for being one of a
+ *    kind rather than for fitting the curve. See `sim/balance.ts`'s
  *    `naiveChainProbe`, the regression check that a full ring can't be built
  *    on autopilot.
  *
@@ -130,6 +140,22 @@ const SEEDS: SeedSpec[] = [
       "A dense steel disc, cast and balanced true, spun up and left turning on a well-oiled axle in a room shut against draughts. Once it's turning fast enough, air resistance is the only thing slowing it down, so a small push against that drag returns far more than it costs, drawn from the spin already stored in the disc. A disc heavy and true enough to hold that spin for more than an afternoon is hard to cast, and that is what makes a good one rare.",
     demands: { motion: 12 },
     yields: { motion: 20 },
+    rarity: 'rare',
+  },
+  {
+    name: 'Seed Crystal',
+    description:
+      'A single true crystal, lowered into a jar of its own solution held just short of turning cloudy. Left standing overnight, more of the same substance sets onto every face, faster than the seed alone weighed going in. A solution held that close to turning without doing so is hard to keep, and harder to keep still.',
+    demands: { mass: 12 },
+    yields: { mass: 20 },
+    rarity: 'rare',
+  },
+  {
+    name: 'Sun-Cured Tinder',
+    description:
+      'A twist of tinder cured a whole season in direct sun, dried past what an ordinary twist ever reaches. A struck spark or a beam through a lens sets it alight at once, and it burns hotter and longer than tinder cut fresh, giving off far more heat than the light that lit it. A season is a long time to leave anything out where weather and thieves can reach it.',
+    demands: { light: 10 },
+    yields: { heat: 18 },
     rarity: 'rare',
   },
 
@@ -288,6 +314,54 @@ const SEEDS: SeedSpec[] = [
     yields: { heat: 10, light: 4 },
     rarity: 'common',
   },
+  {
+    name: 'Resistance Coil',
+    description:
+      "A coil of iron wire, wound tight and wired to a jar battery. Driven hard enough it glows dull red, throwing real heat into the room. Most of what the battery gives up is spent driving the current through the coil's own resistance, and only the rest escapes as heat you can feel.",
+    demands: { charge: 14 },
+    yields: { heat: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Silt Trap',
+    description:
+      'A stone-lined basin set where a fast leat slows and widens before the wheel. The current drops the grit and sand it carries as it slackens, but most of what the water was carrying rides on through before the basin can catch it.',
+    demands: { motion: 14 },
+    yields: { mass: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Galvanic Plating',
+    description:
+      'A copper plate hung in a bath of blue vitriol, wired to a jar battery. Left long enough, metal drawn out of the solution builds up on the plate as a solid skin. Most of the current spent on the bath goes into heating the liquid rather than laying down metal.',
+    demands: { charge: 16 },
+    yields: { mass: 14 },
+    rarity: 'common',
+  },
+  {
+    name: 'Sand Ballast',
+    description:
+      "A canvas sack of sand, slung on a line run over a high beam and cut loose to fall. The drop hauls whatever is tied to the line's other end up behind it, but the sack bursts on landing, and most of the fall is spent in the burst and the scatter rather than the haul.",
+    demands: { mass: 14 },
+    yields: { motion: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Arc Lamp',
+    description:
+      "Two carbon rods wired to a jar battery, touched together and drawn a hair's width apart. Held there, the gap keeps arcing, throwing a light too bright to look at straight on. The rods burn away at the tip as they arc, and most of the current goes into that burning rather than the light.",
+    demands: { charge: 14 },
+    yields: { light: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Selenium Cell',
+    description:
+      'A thin selenium film pressed between two brass plates. Struck with light it raises a small current between the plates, stronger the brighter the light falling on it, though most of what strikes the film passes straight through without raising anything at all.',
+    demands: { light: 14 },
+    yields: { charge: 15 },
+    rarity: 'uncommon',
+  },
 
   // ---- Relays: they hand back the whole of what they were given ----
   {
@@ -358,10 +432,25 @@ const SEEDS: SeedSpec[] = [
     yields: {},
     rarity: 'common',
   },
+  {
+    name: "Fuller's Earth",
+    description:
+      'A fine, greasy clay dug from a handful of pits, used by fullers to work the lanolin out of raw wool. Worked into cloth or hide it draws grease and moisture into itself and holds them there for good.',
+    demands: { mass: 16 },
+    yields: {},
+    rarity: 'common',
+  },
 
   // ---- Singular: one apiece, doing at a single slot what two rare reagents ----
   // would together. `singular` is a price, not a mechanical rule — nothing in
   // the resolver reads rarity; the catalog just does not carry a second.
+  //
+  // The Antiproton below is priced apart from these two: not twice a rare
+  // reagent but an outlier by design, catalogued because there is exactly one
+  // and never will be a second, not because its ratio was tuned to fit
+  // alongside the rest. `sim/balance.ts` excludes the whole rarity from the
+  // checks the common/uncommon catalog is held to, which is what makes room
+  // for it to exist at all.
   {
     name: 'Tungsten Foil',
     description:
@@ -378,6 +467,14 @@ const SEEDS: SeedSpec[] = [
     yields: { heat: 24, motion: 24 },
     rarity: 'singular',
   },
+  {
+    name: 'Trapped Antiproton',
+    description:
+      "A single antiproton, caught off a collision no one has managed to repeat and held clear of the vessel walls in a ring of opposed magnets that has not been switched off since. Given passage to a speck of ordinary matter, the two do not react: they cease, both at once, and the whole mass of either leaves as a burst of heat, light, motion and charge, none of it recognisable afterward as the matter it was. The field that caught it has never been built a second time, and nothing about keeping this one alive gets easier with practice.",
+    demands: { mass: 2 },
+    yields: { heat: 24, motion: 24, charge: 24, light: 24 },
+    rarity: 'singular',
+  }
 ]
 
 /** Materializes the seed catalog with ids and timestamps. */

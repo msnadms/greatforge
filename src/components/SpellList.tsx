@@ -5,13 +5,13 @@ export function SpellList() {
 
   /** Anything unsaved on the workbench would be lost by loading another spell. */
   function confirmLeave(): boolean {
-    return !dirty || confirm('The current working has unsaved changes. Discard them?')
+    return !dirty || confirm('The current rite has unsaved changes. Discard them?')
   }
 
   return (
     <section className="panel spells">
       <div className="tray__head">
-        <h2 className="panel__title">Workings</h2>
+        <h2 className="panel__title">Rites</h2>
         <button
           type="button"
           className="btn btn--small"
@@ -26,7 +26,7 @@ export function SpellList() {
       {loading ? (
         <p className="tray__empty">Loading…</p>
       ) : spells.length === 0 ? (
-        <p className="tray__empty">No workings inscribed yet.</p>
+        <p className="tray__empty">No rites inscribed yet.</p>
       ) : (
         <ul className="spells__list">
           {spells.map((spell) => {
@@ -41,7 +41,7 @@ export function SpellList() {
                     if (!active && confirmLeave()) selectSpell(spell.id)
                   }}
                 >
-                  <span className="spells__title">{spell.title || 'Untitled working'}</span>
+                  <span className="spells__title">{spell.title || 'Untitled rite'}</span>
                   <span className="spells__meta">
                     {spell.form} · {filled} component{filled === 1 ? '' : 's'}
                   </span>
@@ -49,9 +49,9 @@ export function SpellList() {
                 <button
                   type="button"
                   className="btn btn--small btn--danger"
-                  aria-label={`Delete ${spell.title || 'untitled working'}`}
+                  aria-label={`Delete ${spell.title || 'untitled rite'}`}
                   onClick={() => {
-                    if (confirm(`Delete "${spell.title || 'Untitled working'}"?`)) {
+                    if (confirm(`Delete "${spell.title || 'Untitled rite'}"?`)) {
                       void deleteSpell(spell.id)
                     }
                   }}

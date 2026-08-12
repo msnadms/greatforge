@@ -612,12 +612,30 @@
   position: relative;
 }
 
+.last__item {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  padding-bottom: 10px;
+}
+
 .book__randomName {
   position: absolute;
   top: 6px;
   right: 6px;
   padding: 3px 6px;
   line-height: 1;
+  background: none !important;
+  border: none !important;
+  font-size: 20px !important;
+}
+
+.btn__expandable {
+  background: none;
+  border: none;
+  text-align: left;
+  margin-left: -4px;
 }
 
 .book__page--right {
@@ -713,6 +731,36 @@
   letter-spacing: 1.2px;
   text-transform: uppercase;
   color: var(--rune);
+}
+
+.book__viewCircle {
+  width: 96px;
+  margin: 4px auto;
+  /* The flipped bottom arc's radius runs past the viewBox on purpose — see
+     NUM_RADIUS/NUM_SIZE in Spellbook.tsx — and an SVG clips to its own
+     viewBox by default, which silently drops whatever falls outside it. */
+  overflow: visible;
+}
+
+.book__viewCircleRing {
+  fill: none;
+  stroke: var(--border-strong);
+  stroke-width: 0.4;
+  opacity: 0.9;
+}
+
+.book__viewNumber {
+  font-family: var(--heading);
+  font-size: 14px;
+  font-variant-numeric: tabular-nums;
+  text-anchor: middle;
+  fill: hsl(var(--num-hue, 40) var(--gem-s-strong) var(--gem-l));
+}
+
+.book__viewNumber--toll {
+  /* Same currency hue, pulled darker and toward red so a cost reads as a
+     cost even before the two rows are compared. */
+  fill: color-mix(in srgb, hsl(var(--num-hue, 40) var(--gem-s-strong) var(--gem-l)) 55%, #7a1414 45%);
 }
 
 .book__viewNotes {

@@ -236,7 +236,7 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     form: 'prayer',
     label: 'Prayer',
     article: 'a',
-    gloss: 'The first form anyone is taught. It addresses something and asks. Most workings in the codex are prayers.',
+    gloss: 'The first form anyone is taught. It addresses something and asks.',
     underfed: 'credit',
     // Asks nothing, spares nothing. The only form that resolves a ring exactly
     // as the bare laws state, and what every other form is measured against.

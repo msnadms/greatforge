@@ -1,6 +1,13 @@
 import { useState, type CSSProperties } from 'react'
 import { CURRENCY_META, LAWS } from '../data/currencies'
-import { FORM_META, LOSS_RELIEF_RULE, UNDERFED_LABEL, UNDERFED_RULE } from '../data/spellForms'
+import {
+  FORM_META,
+  UNDERFED_LABEL,
+  UNDERFED_RULE,
+  conditionCostRule,
+  conditionFor,
+  formLabelFor,
+} from '../data/spellForms'
 import type { SlotReport } from '../lib/reaction'
 import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, type Ledger } from '../types/worldbuilding'
@@ -8,13 +15,13 @@ import { ledgerEntries, type Ledger } from '../types/worldbuilding'
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 
 /**
- * The three verdicts a condition can be in, as the panel words them. `cold` is the
+ * The three verdicts a melody can be in, as the panel words them. `cold` is the
  * circle with nothing in it: it has not failed its form, it has not been judged.
  */
 const CONDITION_HEAD = {
-  cold: 'Condition',
-  met: 'Condition met',
-  unmet: 'Condition not met',
+  cold: 'Melody',
+  met: 'Melody met',
+  unmet: 'Melody not met',
 } as const
 
 /** A list of slot numerals, comma separated. The stinted and starved lines both name slots. */
@@ -66,6 +73,8 @@ export function ReactionPanel() {
   // The form the numbers below were resolved under, not the one the picker is
   // currently showing.
   const form = FORM_META[reaction.form]
+  const condition = conditionFor(reaction.form, reaction.specialty)
+  const formLabel = formLabelFor(reaction.form, reaction.specialty)
   const shortSlots = reaction.slots.filter((slot) => ledgerEntries(slot.shortfall).length > 0)
   // Under a measuring form, slots that gave back less than their yield instead
   // of billing the caster — a zero toll must not read as a ring that fed itself.
@@ -90,30 +99,26 @@ export function ReactionPanel() {
       {expanded && (
         <>
           {/* The form's name and underfed setting are named with the prose behind them
-              as hover text; the condition stays on the page since it's a verdict on
+              as hover text; the melody stays on the page since it's a verdict on
               the ring as placed and changes as reagents move. */}
           <div className="reaction__form">
             <p className="reaction__formLine">
               Spoken as {form.article}{' '}
-              <strong title={form.gloss}>{form.label.toLowerCase()}</strong>.{' '}
+              <strong title={form.gloss}>{formLabel.toLowerCase()}</strong>.{' '}
               <span className="reaction__formTag" title={UNDERFED_RULE[form.underfed]}>
                 {UNDERFED_LABEL[form.underfed]}
               </span>
               .
             </p>
 
-            {form.condition ? (
+            {condition ? (
               // `null` only for a cold circle, which is neither met nor failed.
               <div className={`reaction__condition reaction__condition--${verdict}`}>
                 <p className="reaction__conditionHead">{CONDITION_HEAD[verdict]}</p>
-                <p className="reaction__conditionText">{form.condition.statement}</p>
+                <p className="reaction__conditionText">{condition.statement}</p>
                 {reaction.conditionMet === null ? null : (
                   <p className="reaction__conditionCost">
-                    {
-                      LOSS_RELIEF_RULE[form.condition.loss][
-                        reaction.conditionMet ? (form.condition.reward ?? 'spared') : 'doubled'
-                      ]
-                    }
+                    {conditionCostRule(condition, reaction.conditionMet)}
                   </p>
                 )}
               </div>

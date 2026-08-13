@@ -1,11 +1,13 @@
 import { describeRole, type Role } from './currencies'
 import {
+  CURRENCIES,
   RING_SLOT_COUNT,
   SPELL_FORMS,
   TRANSIT_LOSS_GAP,
   TRANSIT_LOSS_REAGENT,
   transitScale,
   type LossRelief,
+  type CasterSpecialty,
   type Placement,
   type SpellForm,
 } from '../types/worldbuilding'
@@ -117,6 +119,15 @@ export interface FormCondition {
    */
   reward?: 'spared' | 'halved'
   /**
+   * A specialty form may replace the normal transit price after meeting its
+   * condition. These stated costs still scale with caster level in the walk.
+   * The ordinary relief remains in force when the condition is not met.
+   */
+  metTransit?: {
+    reagent: number
+    gap: number
+  }
+  /**
    * Whether the ring as placed satisfies `statement`.
    *
    * Reads the raw placements for every form but one. Most conditions are
@@ -153,6 +164,8 @@ export interface FormCondition {
 export interface ConditionContext {
   /** Whether the slot's demand was fully met, resolving under the prayer. */
   fedUnderBaseline: (slotIndex: number) => boolean
+  /** Whether the slot received any of what it demanded, resolving under the prayer. */
+  touchedUnderBaseline: (slotIndex: number) => boolean
 }
 
 /**
@@ -192,8 +205,8 @@ export const UNDERFED_RULE: Record<SpellFormMeta['underfed'], string> = {
  */
 export const ELEGY_GRIEF = {
   baseToll: 10,
-  tollPerManifestation: 3,
-  maximumManifestation: 8,
+  tollPerManifestation: 2,
+  maximumManifestation: 50,
 } as const
 
 /**
@@ -269,6 +282,136 @@ function filledSlots(placements: Placement[]): number[] {
 }
 
 const EVERY_SLOT = Array.from({ length: RING_SLOT_COUNT }, (_, i) => i)
+
+const BASE_BENEDICTION_CONDITION: FormCondition = {
+  statement: 'No more than three reagents stand in the ring.',
+  loss: 'both',
+  test: (placements) => placements.length > 0 && placements.length <= 3,
+  slots: filledSlots,
+}
+
+const SPECIALTY_BENEDICTION_CONDITIONS: Record<CasterSpecialty, FormCondition> = {
+  warden: {
+    statement: 'No more than four reagents stand in the ring, exactly one is a source, and at least one is a relay.',
+    loss: 'both',
+    test: (placements) =>
+      placements.length <= 4 &&
+      slotsWithRole(placements, 'source').length === 1 &&
+      slotsWithRole(placements, 'relay').length >= 1,
+    slots: filledSlots,
+  },
+  invoker: {
+    statement: 'No more than four reagents stand in the ring, and each yields a currency another reagent demands.',
+    loss: 'both',
+    test: (placements) =>
+      placements.length <= 4 &&
+      placements.every((placement) =>
+        CURRENCIES.some(
+          (currency) =>
+            (placement.component.yields[currency] ?? 0) > 0 &&
+            placements.some(
+              (other) =>
+                other !== placement && (other.component.demands[currency] ?? 0) > 0,
+            ),
+        ),
+      ),
+    slots: filledSlots,
+  },
+  mourner: {
+    statement: 'No more than four reagents stand in the ring, exactly two are sources, and a sink receives some of its demand.',
+    loss: 'both',
+    test: (placements, context) =>
+      placements.length <= 4 &&
+      slotsWithRole(placements, 'source').length === 2 &&
+      slotsWithRole(placements, 'sink').some((slotIndex) => context.touchedUnderBaseline(slotIndex)),
+    slots: filledSlots,
+  },
+}
+
+/** The exact cost or relief a condition has earned, for the reaction panel. */
+export function conditionCostRule(condition: FormCondition, met: boolean): string {
+  const relief: Exclude<LossRelief, 'plain'> = met ? (condition.reward ?? 'spared') : 'doubled'
+  if (!met || !condition.metTransit) return LOSS_RELIEF_RULE[condition.loss][relief]
+
+  const transit =
+    condition.metTransit.reagent === 0
+      ? `Reagent crossings are free. Gaps cost ${condition.metTransit.gap}.`
+      : `Crossings cost ${condition.metTransit.gap} across a gap, ${condition.metTransit.reagent} across a reagent.`
+  if (condition.loss === 'transit') return transit
+  return `${transit} ${SPILL_RELIEF[relief]}`
+}
+
+const SPECIALTY_LITANY_CONDITIONS: Partial<Record<CasterSpecialty, FormCondition>> = {
+  warden: {
+    statement: 'A relay sits immediately before a source, and at least two slots are empty.',
+    loss: 'both',
+    reward: 'spared',
+    test: (placements) => {
+      const hasAnsweringPair = placements.some(
+        (relay) =>
+          describeRole(relay.component) === 'relay' &&
+          placements.some(
+            (source) =>
+              describeRole(source.component) === 'source' &&
+              relay.slotIndex === (source.slotIndex - 1 + RING_SLOT_COUNT) % RING_SLOT_COUNT,
+          ),
+      )
+      return hasAnsweringPair && placements.length <= RING_SLOT_COUNT - 2
+    },
+    slots: (placements) =>
+      placements
+        .filter(
+          (placement) =>
+            (describeRole(placement.component) === 'relay' &&
+              placements.some(
+                (source) =>
+                  describeRole(source.component) === 'source' &&
+                  placement.slotIndex ===
+                    (source.slotIndex - 1 + RING_SLOT_COUNT) % RING_SLOT_COUNT,
+              )) ||
+            (describeRole(placement.component) === 'source' &&
+              placements.some(
+                (relay) =>
+                  describeRole(relay.component) === 'relay' &&
+                  relay.slotIndex === (placement.slotIndex - 1 + RING_SLOT_COUNT) % RING_SLOT_COUNT,
+              )),
+        )
+        .map((placement) => placement.slotIndex),
+  },
+  invoker: {
+    statement: 'At least one relay stands in the ring, and at least three reagents demand a currency another reagent yields.',
+    loss: 'both',
+    reward: 'halved',
+    metTransit: { reagent: 0, gap: TRANSIT_LOSS_GAP },
+    test: (placements) =>
+      slotsWithRole(placements, 'relay').length >= 1 &&
+      placements.filter((placement) =>
+        CURRENCIES.some(
+          (currency) =>
+            (placement.component.demands[currency] ?? 0) > 0 &&
+            placements.some(
+              (other) =>
+                other !== placement && (other.component.yields[currency] ?? 0) > 0,
+            ),
+        ),
+      ).length >= 3,
+    slots: (placements) =>
+      placements
+        .filter(
+          (placement) =>
+            describeRole(placement.component) === 'relay' ||
+            CURRENCIES.some(
+              (currency) =>
+                (placement.component.demands[currency] ?? 0) > 0 &&
+                placements.some(
+                  (other) =>
+                    other !== placement && (other.component.yields[currency] ?? 0) > 0,
+                ),
+            ),
+        )
+        .map((placement) => placement.slotIndex),
+  },
+}
 
 export const FORM_META: Record<SpellForm, SpellFormMeta> = {
   prayer: {
@@ -408,22 +551,33 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     article: 'a',
     gloss: 'Spoken over someone who is leaving, and it names them. The hands stay at the sides. Nothing else is worked after it.',
     underfed: 'measure',
-    condition: {
-      statement: 'No more than three reagents stand in the ring.',
-      loss: 'both',
-      // The small-circle form: three reagents deliver all they hold instead of a
-      // fraction. The price is never the body, only the reagents left unplaced.
-      //
-      // `both`, not `spill` alone: a `spill`-only benediction cost a wide ring
-      // nothing for ignoring the cap, since a full ring never spills regardless
-      // — the honest three-reagent build was then strictly worse than just
-      // filling the ring and eating the "unmet" penalty. Spending the transit
-      // half too means that wide ring pays a doubled lap for the dodge.
-      test: (placements) => placements.length > 0 && placements.length <= 3,
-      // The rule counts reagents, so it marks the ones being counted.
-      slots: filledSlots,
-    },
+    // The small-circle form: three reagents deliver all they hold instead of a
+    // fraction. Specialty-written benedictions can earn a fourth place through
+    // their own composition rule; rites written before specialties keep this
+    // plain version forever.
+    condition: BASE_BENEDICTION_CONDITION,
   },
+}
+
+/** The condition a rite was inscribed with. Legacy rites retain the base form's condition. */
+export function conditionFor(form: SpellForm, specialty: CasterSpecialty | null): FormCondition | null {
+  if (form === 'benediction' && specialty) return SPECIALTY_BENEDICTION_CONDITIONS[specialty]
+  if (form === 'litany' && specialty) return SPECIALTY_LITANY_CONDITIONS[specialty] ?? FORM_META.litany.condition
+  return FORM_META[form].condition
+}
+
+/** Specialty-written forms carry their own names as well as their conditions. */
+export function formLabelFor(form: SpellForm, specialty: CasterSpecialty | null): string {
+  if (form === 'benediction') {
+    if (specialty === 'warden') return 'Threshold Benediction'
+    if (specialty === 'invoker') return 'Herald Benediction'
+    if (specialty === 'mourner') return 'Parting Benediction'
+  }
+  if (form === 'litany') {
+    if (specialty === 'warden') return 'Vigil Litany'
+    if (specialty === 'invoker') return 'Answering Litany'
+  }
+  return FORM_META[form].label
 }
 
 export const FORM_LIST: SpellFormMeta[] = SPELL_FORMS.map((form) => FORM_META[form])
@@ -440,8 +594,9 @@ export function conditionRelief(
   form: SpellForm,
   placements: Placement[],
   context: ConditionContext,
+  specialty: CasterSpecialty | null = null,
 ): { met: boolean | null; transit: LossRelief; spill: LossRelief } {
-  const condition = FORM_META[form].condition
+  const condition = conditionFor(form, specialty)
   if (!condition || placements.length === 0) {
     return { met: null, transit: 'plain', spill: 'plain' }
   }
@@ -465,8 +620,12 @@ const EMPTY_SLOTS: ReadonlySet<number> = new Set<number>()
  * failing its form, and marking eight slots under an invocation nobody has begun
  * to lay would read as a verdict on a working that does not exist yet.
  */
-export function conditionSlots(form: SpellForm, placements: Placement[]): ReadonlySet<number> {
-  const condition = FORM_META[form].condition
+export function conditionSlots(
+  form: SpellForm,
+  placements: Placement[],
+  specialty: CasterSpecialty | null = null,
+): ReadonlySet<number> {
+  const condition = conditionFor(form, specialty)
   if (!condition || placements.length === 0) return EMPTY_SLOTS
   return new Set(condition.slots(placements))
 }

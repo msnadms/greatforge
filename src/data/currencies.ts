@@ -190,7 +190,7 @@ export type Role = (typeof ROLES)[number]
 
 export const ROLE_HINT: Record<Role, string> = {
   source:
-    'Demands nothing, so it can open a circle at slot I and can never charge a toll. Only one stands in a circle at a time — setting down a second lifts the first back out — since stacking them would only ever add free current. There are only three at common and uncommon rarity — a spark, a weight, a lens — and nothing sources charge or mass at all; those have to be made out of something the ring is already carrying.',
+    'Demands nothing, so it can open a circle at slot I and can never charge a toll. Only one normally stands in a circle at a time — setting down a second lifts the first back out — since stacking them would only ever add free current. A mourner may seat two in a parting benediction. There are only three at common and uncommon rarity — a spark, a weight, a lens — and nothing sources charge or mass at all; those have to be made out of something the ring is already carrying.',
   fuel: 'Gives back more than it asks and gives up nothing to do it — it was carrying the difference already. Most give back far more.',
   converter:
     'Trades one currency for another. A few hand back more than they took; most cost more than they return. Conversion is the only route into charge and mass and the only way back into light or motion from anything else, so a ring that wants any of those has to know which converters are worth the slot.',

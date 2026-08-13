@@ -10,10 +10,12 @@
 import { buildSeedComponents } from '../src/data/seedComponents'
 import { buildConditionContext, computeReaction } from '../src/lib/reaction'
 import { CURRENCY_META, describeRole } from '../src/data/currencies'
-import { FORM_META, conditionRelief } from '../src/data/spellForms'
+import { formsForSpecialty } from '../src/data/casterSpecialties'
+import { FORM_META, conditionFor, conditionRelief, formLabelFor } from '../src/data/spellForms'
 import { NEAR_OPTIMAL_RINGS, NET_OPTIMIZED_FORMS, type NearOptimalRing } from './nearOptimalRings'
 import {
   CASTER_LEVELS,
+  CASTER_SPECIALTIES,
   CURRENCIES,
   LEVEL_POWER,
   MAX_LEDGER_ENTRY,
@@ -25,6 +27,7 @@ import {
   ledgerEntries,
   ledgerTotal,
   type CasterLevel,
+  type CasterSpecialty,
   type Currency,
   type Ledger,
   type MaterialComponent,
@@ -35,9 +38,34 @@ import {
 /** The form every measurement of the circle itself is taken under. */
 const PLAIN: SpellForm = 'prayer'
 
+interface FormRun {
+  form: SpellForm
+  specialty: CasterSpecialty | null
+}
+
+/** Legacy forms remain the control. Specialty runs exercise the conditions new rites actually retain. */
+const FORM_RUNS: FormRun[] = [
+  ...SPELL_FORMS.map((form) => ({ form, specialty: null })),
+  ...CASTER_SPECIALTIES.flatMap((specialty) =>
+    formsForSpecialty(specialty).map((form) => ({ form, specialty })),
+  ),
+]
+
+function runKey({ form, specialty }: FormRun): string {
+  return `${specialty ?? 'legacy'}:${form}`
+}
+
+function runLabel({ form, specialty }: FormRun): string {
+  return specialty ? `${specialty} ${formLabelFor(form, specialty)}` : `legacy ${formLabelFor(form, null)}`
+}
+
+function sourceLimit({ form, specialty }: FormRun): number {
+  return form === 'benediction' && specialty === 'mourner' ? 2 : 1
+}
+
 /**
  * `--near-optimal` skips the random/fed sampling below (the slow part) and
- * runs only `nearOptimalReport()`, against the 70 hand-picked rings in
+ * runs only `nearOptimalReport()`, against the curated legacy and specialty rings in
  * `nearOptimalRings.ts`. Default (no flag) runs everything, near-optimal
  * report included, exactly as before.
  */
@@ -82,33 +110,38 @@ function shuffled<T>(items: T[]): T[] {
   return next
 }
 
-function randomRing(reagents: number): Placement[] {
+function randomRing(reagents: number, maximumSources = 1): Placement[] {
   const chosen = shuffled([...Array(RING_SLOT_COUNT).keys()])
     .slice(0, reagents)
     .sort((a, b) => a - b)
   const pool = [...CATALOG]
   const placements: Placement[] = []
-  let hasSource = false
+  let sourceCount = 0
   for (const slotIndex of chosen) {
-    // A ring holds at most one source (law 5); once one is drawn, sources are
-    // excluded from the remaining slots.
-    const candidates = hasSource ? pool.filter((c) => describeRole(c) !== 'source') : pool
+    // Parting benediction is the one form that deliberately admits two sources.
+    const candidates =
+      sourceCount >= maximumSources ? pool.filter((c) => describeRole(c) !== 'source') : pool
     const idx = Math.floor(rand() * candidates.length)
     const component = candidates[idx]
     pool.splice(pool.indexOf(component), 1)
-    if (describeRole(component) === 'source') hasSource = true
+    if (describeRole(component) === 'source') sourceCount++
     placements.push({ slotIndex, component })
   }
   return placements
 }
 
 /** A ring built the way a player builds one: a source first, then anything. */
-function builtRing(reagents: number): Placement[] {
+function builtRing(reagents: number, maximumSources = 1): Placement[] {
   const placements: Placement[] = [{ slotIndex: 0, component: pick(SOURCES) }]
-  const pool = [...NON_SOURCES]
+  const pool = CATALOG.filter((component) => component !== placements[0].component)
+  let sourceCount = 1
   for (let slotIndex = 1; slotIndex < reagents; slotIndex++) {
-    const idx = Math.floor(rand() * pool.length)
-    placements.push({ slotIndex, component: pool.splice(idx, 1)[0] })
+    const candidates =
+      sourceCount >= maximumSources ? pool.filter((c) => describeRole(c) !== 'source') : pool
+    const component = candidates[Math.floor(rand() * candidates.length)]
+    pool.splice(pool.indexOf(component), 1)
+    if (describeRole(component) === 'source') sourceCount++
+    placements.push({ slotIndex, component })
   }
   return placements
 }
@@ -150,11 +183,13 @@ function growFed(
   pool: MaterialComponent[],
   slotIndex: number,
   level: CasterLevel = 5,
+  maximumSources = 1,
 ): boolean {
-  // A source never starves the ring, so once one is placed the rest are
-  // excluded (law 5 allows only one).
-  const hasSource = placements.some((p) => describeRole(p.component) === 'source')
-  const candidates = hasSource ? pool.filter((c) => describeRole(c) !== 'source') : pool
+  // A source never starves the ring, so ordinary forms stop at one. Parting
+  // benediction alone gets its second source through the caller's limit.
+  const sourceCount = placements.filter((p) => describeRole(p.component) === 'source').length
+  const candidates =
+    sourceCount >= maximumSources ? pool.filter((c) => describeRole(c) !== 'source') : pool
   for (const candidate of shuffled(candidates)) {
     const trial = [...placements, { slotIndex, component: candidate }]
     const r = computeReaction(trial, PLAIN, level)
@@ -174,13 +209,13 @@ function growFed(
  *
  * Slots must arrive in ascending order — the check is incremental.
  */
-function fedRingIn(slots: number[]): Placement[] {
+function fedRingIn(slots: number[], maximumSources = 1): Placement[] {
   for (let attempt = 0; attempt < FED_ATTEMPTS; attempt++) {
     const placements: Placement[] = []
     const pool = [...CATALOG]
     let ok = true
     for (const slotIndex of slots) {
-      if (!growFed(placements, pool, slotIndex)) {
+      if (!growFed(placements, pool, slotIndex, 5, maximumSources)) {
         ok = false
         break
       }
@@ -204,8 +239,13 @@ interface Row {
   met: boolean | null
 }
 
-function resolve(ring: Placement[], form: SpellForm = PLAIN, level: CasterLevel = 5): Row {
-  const reaction = computeReaction(ring, form, level)
+function resolve(
+  ring: Placement[],
+  form: SpellForm = PLAIN,
+  level: CasterLevel = 5,
+  specialty: CasterSpecialty | null = null,
+): Row {
+  const reaction = computeReaction(ring, form, level, false, specialty)
 
   // Law 1: every unit released either was drawn, bled away, or reached the
   // mouth. Thrown rather than reported, since it can never legitimately fail.
@@ -579,12 +619,12 @@ function measuringFormsNeverChargeAcrossLevels(): void {
     for (let i = 0; i < 1000; i++) {
       const reagents = 1 + Math.floor(rand() * RING_SLOT_COUNT)
       const ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
-      for (const form of SPELL_FORMS) {
-        if (FORM_META[form].underfed !== 'measure') continue
-        const r = computeReaction(ring, form, level)
+      for (const run of FORM_RUNS) {
+        if (FORM_META[run.form].underfed !== 'measure') continue
+        const r = computeReaction(ring, run.form, level, false, run.specialty)
         checked++
         if (r.tollTotal !== 0) {
-          throw new Error(`${form} measures but charged ${r.tollTotal} at level ${level}`)
+          throw new Error(`${runLabel(run)} measures but charged ${r.tollTotal} at level ${level}`)
         }
       }
     }
@@ -596,7 +636,8 @@ function measuringFormsNeverChargeAcrossLevels(): void {
 // -------------------------------------------------------------------- forms
 
 /**
- * The seven forms over the same rings. `loud` counts rings where a form
+ * Every legacy and specialty form over the same ordinary (one-source) rings.
+ * `loud` counts rings where a form
  * delivered most; `cheap` counts rings where it scored best on manifestation
  * minus toll (read with care — a holding form scoring 0 beats a firing one
  * losing money, so it rewards doing nothing). `met` is the share of rings
@@ -613,9 +654,9 @@ function formReport(): void {
     loud: number
     cheap: number
   }
-  const cells = new Map<SpellForm, FormCell>(
-    SPELL_FORMS.map((form) => [
-      form,
+  const cells = new Map<string, FormCell>(
+    FORM_RUNS.map((run) => [
+      runKey(run),
       { n: 0, manifestation: 0, toll: 0, bled: 0, met: 0, loud: 0, cheap: 0 },
     ]),
   )
@@ -626,32 +667,32 @@ function formReport(): void {
   for (let reagents = 1; reagents <= RING_SLOT_COUNT; reagents++) {
     for (let i = 0; i < SAMPLES; i++) {
       const ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
-      let loudest: SpellForm | null = null
+      let loudest: string | null = null
       let loudestScore = -Infinity
-      let cheapest: SpellForm | null = null
+      let cheapest: string | null = null
       let cheapestScore = -Infinity
 
-      for (const form of SPELL_FORMS) {
-        const row = resolve(ring, form)
-        const cell = cells.get(form)!
+      for (const run of FORM_RUNS) {
+        const row = resolve(ring, run.form, 5, run.specialty)
+        const cell = cells.get(runKey(run))!
         cell.n++
         cell.manifestation += row.manifestation
         cell.toll += row.toll
         cell.bled += row.bled
         if (row.met) cell.met++
 
-        if (FORM_META[form].underfed === 'measure' && row.toll !== 0) {
-          throw new Error(`${form} measures but charged a toll of ${row.toll}`)
+        if (FORM_META[run.form].underfed === 'measure' && row.toll !== 0) {
+          throw new Error(`${runLabel(run)} measures but charged a toll of ${row.toll}`)
         }
 
         if (row.manifestation > loudestScore) {
           loudestScore = row.manifestation
-          loudest = form
+          loudest = runKey(run)
         }
         const score = row.manifestation - row.toll
         if (score > cheapestScore) {
           cheapestScore = score
-          cheapest = form
+          cheapest = runKey(run)
         }
       }
 
@@ -660,26 +701,27 @@ function formReport(): void {
     }
   }
 
-  console.log('\n=== the seven forms over the same rings ===')
+  console.log('\n=== legacy and specialty forms over the same ordinary rings ===')
   console.log(
-    'form         underfed' +
+    'form                       underfed' +
       ['manif', 'toll', 'bled', 'met', 'loud', 'cheap'].map((h) => h.padStart(8)).join(''),
   )
-  const dead: SpellForm[] = []
-  for (const [form, c] of cells) {
+  const dead: string[] = []
+  for (const run of FORM_RUNS) {
+    const c = cells.get(runKey(run))!
     const avg = (total: number) => (total / c.n).toFixed(1).padStart(8)
     const pct = (count: number) => `${Math.round((count / c.n) * 100)}%`.padStart(8)
     console.log(
-      form.padEnd(13) +
-        FORM_META[form].underfed.padEnd(8) +
+      runLabel(run).padEnd(27) +
+        FORM_META[run.form].underfed.padEnd(8) +
         avg(c.manifestation) +
         avg(c.toll) +
         avg(c.bled) +
-        (FORM_META[form].condition ? pct(c.met) : '-'.padStart(8)) +
+        (conditionFor(run.form, run.specialty) ? pct(c.met) : '-'.padStart(8)) +
         pct(c.loud) +
         pct(c.cheap),
     )
-    if (c.loud === 0 && c.cheap === 0) dead.push(form)
+    if (c.loud === 0 && c.cheap === 0) dead.push(runLabel(run))
   }
   console.log(
     dead.length === 0
@@ -699,7 +741,7 @@ function formReport(): void {
  * separates them there is the condition's relief alone — the column to read
  * when tuning a condition.
  *
- * Rings are found by rejection sampling against the real `FORM_META`
+ * Rings are found by rejection sampling against the real `conditionFor`
  * predicate, so shapes can't drift from the resolver. Finding none is itself
  * the reachability check.
  */
@@ -714,12 +756,13 @@ function formsOnTheirOwnGround(): void {
     const cap = cohort === 'fed' ? 60000 : CAP
     console.log(`\n=== each form on ${cohort} rings that answer it, against the prayer ===`)
     console.log(
-      'form         rings' +
+      'form                       rings' +
         ['manif', 'toll', 'vs plain', 'plaintoll'].map((h) => h.padStart(10)).join(''),
     )
 
-    for (const form of SPELL_FORMS) {
-      if (!FORM_META[form].condition) continue
+    for (const run of FORM_RUNS) {
+      const condition = conditionFor(run.form, run.specialty)
+      if (!condition) continue
 
       let found = 0
       let tries = 0
@@ -727,9 +770,9 @@ function formsOnTheirOwnGround(): void {
       let toll = 0
       let plainManifestation = 0
       let plainToll = 0
-      // Litany and dirge ask about roles/resolved state, not slot positions,
-      // so they skip the shape pre-screen below and are gated after the fill.
-      const geometric = form !== 'litany' && form !== 'dirge'
+      // Litany, dirge, and specialty benedictions ask about roles/resolved
+      // state rather than only slot positions, so they gate after the fill.
+      const geometric = run.form !== 'litany' && run.form !== 'dirge' && !run.specialty
 
       while (found < wanted && tries < cap) {
         tries++
@@ -738,19 +781,25 @@ function formsOnTheirOwnGround(): void {
         if (cohort === 'fed') {
           // Screen a throwaway ring against the shape first when the condition
           // only reads slot positions, before paying for the fill.
-          const shape = randomRing(reagents)
-          if (geometric && !conditionRelief(form, shape, buildConditionContext(shape, 5)).met) continue
-          ring = fedRingIn(shape.map((p) => p.slotIndex))
+          const shape = randomRing(reagents, sourceLimit(run))
+          if (
+            geometric &&
+            !conditionRelief(run.form, shape, buildConditionContext(shape, 5), run.specialty).met
+          ) continue
+          ring = fedRingIn(shape.map((p) => p.slotIndex), sourceLimit(run))
         } else {
-          ring = rand() < 0.5 ? randomRing(reagents) : builtRing(reagents)
+          ring =
+            rand() < 0.5
+              ? randomRing(reagents, sourceLimit(run))
+              : builtRing(reagents, sourceLimit(run))
         }
         if (ring.length === 0) continue
         // The gate is the predicate itself: `conditionRelief` before any slot
         // is walked, except dirge, which resolves a lazy baseline ring.
-        if (!conditionRelief(form, ring, buildConditionContext(ring, 5)).met) continue
+        if (!conditionRelief(run.form, ring, buildConditionContext(ring, 5), run.specialty).met) continue
 
         found++
-        const own = resolve(ring, form)
+        const own = resolve(ring, run.form, 5, run.specialty)
         const plain = resolve(ring, PLAIN)
         manifestation += own.manifestation
         toll += own.toll
@@ -761,13 +810,13 @@ function formsOnTheirOwnGround(): void {
       if (found === 0) {
         // Expected only for the fed elegy: it forbids a source, so the first
         // reagent the current reaches must starve.
-        const why = cohort === 'fed' && form === 'elegy' ? '  (no source, so it cannot be fed)' : ''
-        console.log(`${form.padEnd(13)}UNREACHABLE in ${tries} tries${why}`)
+        const why = cohort === 'fed' && run.form === 'elegy' ? '  (no source, so it cannot be fed)' : ''
+        console.log(`${runLabel(run).padEnd(27)}UNREACHABLE in ${tries} tries${why}`)
         continue
       }
       const avg = (total: number) => (total / found).toFixed(1).padStart(10)
       console.log(
-        form.padEnd(13) +
+        runLabel(run).padEnd(27) +
           String(found).padEnd(5) +
           avg(manifestation) +
           avg(toll) +
@@ -905,9 +954,10 @@ for (const form of SPELL_FORMS) {
  */
 function nearOptimalReport(): void {
   const byFormLevel = new Map<string, NearOptimalRing[]>()
-  const key = (form: SpellForm, level: CasterLevel) => `${form}:${level}`
+  const key = ({ form, specialty }: FormRun, level: CasterLevel) =>
+    `${specialty ?? 'legacy'}:${form}:${level}`
   for (const entry of NEAR_OPTIMAL_RINGS) {
-    const k = key(entry.form, entry.level)
+    const k = key(entry, entry.level)
     const list = byFormLevel.get(k) ?? []
     list.push(entry)
     byFormLevel.set(k, list)
@@ -920,20 +970,27 @@ function nearOptimalReport(): void {
       return { slotIndex, component: found }
     })
 
-  const rows: { form: SpellForm; level: CasterLevel }[] = SPELL_FORMS.flatMap((form) =>
-    NET_OPTIMIZED_FORMS.includes(form)
-      ? [{ form, level: 5 as CasterLevel }]
-      : CASTER_LEVELS.map((level) => ({ form, level })),
-  )
+  const rows: (FormRun & { level: CasterLevel })[] = []
+  const seen = new Set<string>()
+  for (const entry of NEAR_OPTIMAL_RINGS) {
+    const row = { form: entry.form, specialty: entry.specialty, level: entry.level }
+    const rowKey = key(row, row.level)
+    if (!seen.has(rowKey)) {
+      seen.add(rowKey)
+      rows.push(row)
+    }
+  }
 
-  console.log('\n=== near-optimal rings per form (sim/nearOptimalRings.ts) ===')
+  console.log('\n=== near-optimal rings per form and specialty (sim/nearOptimalRings.ts) ===')
   console.log(
     'form               ' +
       ['manif', 'toll', 'net', 'bled', 'met'].map((h) => h.padStart(8)).join(''),
   )
-  for (const { form, level } of rows) {
-    const entries = byFormLevel.get(key(form, level)) ?? []
-    const label = NET_OPTIMIZED_FORMS.includes(form) ? form : `${form} @ lvl ${level}`
+  for (const run of rows) {
+    const entries = byFormLevel.get(key(run, run.level)) ?? []
+    const label = NET_OPTIMIZED_FORMS.includes(run.form)
+      ? runLabel(run)
+      : `${runLabel(run)} @ lvl ${run.level}`
     if (entries.length === 0) {
       console.log(`${label.padEnd(19)}NO RINGS GENERATED FOR THIS FORM/LEVEL`)
       continue
@@ -943,7 +1000,7 @@ function nearOptimalReport(): void {
     let bled = 0
     let met = 0
     for (const entry of entries) {
-      const r = computeReaction(resolveRing(entry), form, level)
+      const r = computeReaction(resolveRing(entry), run.form, run.level, false, run.specialty)
       manifestation += r.manifestationTotal
       toll += r.tollTotal
       bled += r.bledTotal
@@ -963,11 +1020,13 @@ function nearOptimalReport(): void {
 
   const NAMED_SLOTS = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
   console.log('\n--- each ring, in full ---')
-  for (const { form, level } of rows) {
-    const label = NET_OPTIMIZED_FORMS.includes(form) ? form : `${form} @ level ${level}`
+  for (const run of rows) {
+    const label = NET_OPTIMIZED_FORMS.includes(run.form)
+      ? runLabel(run)
+      : `${runLabel(run)} @ level ${run.level}`
     console.log(`\n${label}:`)
-    for (const entry of byFormLevel.get(key(form, level)) ?? []) {
-      const r = computeReaction(resolveRing(entry), form, level)
+    for (const entry of byFormLevel.get(key(run, run.level)) ?? []) {
+      const r = computeReaction(resolveRing(entry), run.form, run.level, false, run.specialty)
       const mark = r.conditionMet === null ? '  -' : r.conditionMet ? 'met' : 'fail'
       const shown = entry.placements
         .map((p) => `${NAMED_SLOTS[p.slotIndex]}:${p.component}`)

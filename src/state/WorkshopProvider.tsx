@@ -4,11 +4,16 @@ import { newId } from '../lib/id'
 import type { WorkshopRepository } from '../lib/repository'
 import { computeReaction, resolvePlacements } from '../lib/reaction'
 import { describeRole } from '../data/currencies'
+import { formsForSpecialty } from '../data/casterSpecialties'
 import {
   DEFAULT_CASTER_LEVEL,
   emptySlots,
+  normalizePlayerProfile,
+  type CasterSpecialty,
   type MaterialComponent,
+  type PlayerProfile,
   type Spell,
+  type SpellForm,
 } from '../types/worldbuilding'
 import {
   WorkshopContext,
@@ -17,12 +22,13 @@ import {
   type WorkshopValue,
 } from './workshopContext'
 
-function blankSpell(): Spell {
+function blankSpell(form: SpellForm = 'prayer', specialty: CasterSpecialty | null = null): Spell {
   const now = Date.now()
   return {
     id: newId(),
     title: '',
-    form: 'prayer',
+    form,
+    specialty,
     casterLevel: DEFAULT_CASTER_LEVEL,
     text: '',
     notes: '',
@@ -56,6 +62,7 @@ export function WorkshopProvider({
 }: WorkshopProviderProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [profile, setProfile] = useState<PlayerProfile>(() => normalizePlayerProfile(undefined))
   const [components, setComponents] = useState<MaterialComponent[]>([])
   const [spells, setSpells] = useState<Spell[]>([])
   const [draft, setDraft] = useState<Spell>(blankSpell)
@@ -68,13 +75,18 @@ export function WorkshopProvider({
     let cancelled = false
     void (async () => {
       try {
-        const [loadedComponents, loadedSpells] = await Promise.all([
+        const [loadedProfile, loadedComponents, loadedSpells] = await Promise.all([
+          repository.getProfile(),
           repository.listComponents(),
           repository.listSpells(),
         ])
         if (cancelled) return
+        setProfile(loadedProfile)
         setComponents([...loadedComponents].sort(byName))
         setSpells([...loadedSpells].sort(byUpdatedDesc))
+        if (loadedProfile.specialty) {
+          setDraft(blankSpell(formsForSpecialty(loadedProfile.specialty)[1], loadedProfile.specialty))
+        }
       } catch (cause) {
         if (cancelled) return
         setError(`Could not open the workshop: ${describe(cause)}`)
@@ -106,6 +118,30 @@ export function WorkshopProvider({
     [components],
   )
 
+  const allowedForms = useMemo(
+    () => (profile.specialty ? formsForSpecialty(profile.specialty) : []),
+    [profile.specialty],
+  )
+
+  const chooseSpecialty = useCallback(
+    async (specialty: CasterSpecialty) => {
+      if (profile.specialty === specialty) return true
+      const next: PlayerProfile = { specialty }
+      const ok = await write('Could not choose your discipline', () => repository.saveProfile(next))
+      if (!ok) return false
+      setProfile(next)
+      // An unsaved rite belongs to the discipline currently chosen. An
+      // inscribed rite keeps its historical form, even after its caster trains
+      // in a different discipline.
+      if (!spells.some((spell) => spell.id === draft.id)) {
+        setDraft(blankSpell(formsForSpecialty(specialty)[1], specialty))
+        setDirty(false)
+      }
+      return true
+    },
+    [draft.id, profile.specialty, repository, spells, write],
+  )
+
   const placements = useMemo(
     () => resolvePlacements(draft.slots, componentsById),
     [draft.slots, componentsById],
@@ -114,8 +150,8 @@ export function WorkshopProvider({
   // Form and caster level are both inputs to the resolver, so changing either
   // re-resolves the whole ring. See `data/spellForms.ts` and the eighth law.
   const reaction = useMemo(
-    () => computeReaction(placements, draft.form, draft.casterLevel),
-    [placements, draft.form, draft.casterLevel],
+    () => computeReaction(placements, draft.form, draft.casterLevel, false, draft.specialty),
+    [placements, draft.form, draft.casterLevel, draft.specialty],
   )
 
   /**
@@ -145,16 +181,29 @@ export function WorkshopProvider({
         const held = slots.indexOf(componentId)
         if (held !== -1) slots[held] = null
 
-        // A circle admits one source too: a source demands nothing, so stacking
-        // them only ever adds free current. Placing a second bumps the first back
-        // to the tray, the same way an occupied slot already gets displaced.
+        // A circle normally admits one source: a source demands nothing, so
+        // stacking them only adds free current. A mourner's parting benediction
+        // deliberately makes room for two; a third still displaces the oldest.
         const incoming = componentsById.get(componentId)
         if (incoming && describeRole(incoming) === 'source') {
+          const maxSources =
+            draft.form === 'benediction' && draft.specialty === 'mourner' ? 2 : 1
+          let sourceCount = slots.reduce((count, occupantId) => {
+            const occupant = occupantId ? componentsById.get(occupantId) : undefined
+            return count + (occupant && describeRole(occupant) === 'source' ? 1 : 0)
+          }, 0)
           for (let i = 0; i < slots.length; i++) {
             if (i === slotIndex) continue
             const occupantId = slots[i]
             const occupant = occupantId ? componentsById.get(occupantId) : undefined
-            if (occupant && describeRole(occupant) === 'source') slots[i] = null
+            if (
+              sourceCount >= maxSources &&
+              occupant &&
+              describeRole(occupant) === 'source'
+            ) {
+              slots[i] = null
+              sourceCount--
+            }
           }
         }
 
@@ -162,7 +211,7 @@ export function WorkshopProvider({
       })
       setArmedComponentId(null)
     },
-    [patchSlots, componentsById],
+    [patchSlots, componentsById, draft.form, draft.specialty],
   )
 
   const clearSlot = useCallback(
@@ -189,15 +238,29 @@ export function WorkshopProvider({
   const updateDraft = useCallback(
     (patch: Partial<Omit<Spell, 'id' | 'createdAt'>>) => {
       if (mode === 'view') return
+      if (patch.form && !allowedForms.includes(patch.form)) return
       setDraft((current) => ({ ...current, ...patch }))
       setDirty(true)
     },
-    [mode],
+    [allowedForms, mode],
   )
 
   const editDraft = useCallback(() => setMode('edit'), [])
 
   const saveDraft = useCallback(async () => {
+    const isNew = !spells.some((spell) => spell.id === draft.id)
+    if (!profile.specialty || (isNew && !allowedForms.includes(draft.form))) {
+      setError('Choose a discipline before inscribing a new working.')
+      return
+    }
+    const sourceCount = placements.filter((placement) => describeRole(placement.component) === 'source').length
+    if (
+      sourceCount > 1 &&
+      !(draft.form === 'benediction' && draft.specialty === 'mourner')
+    ) {
+      setError('Only a mourner’s parting benediction may hold two sources.')
+      return
+    }
     const saved: Spell = {
       ...draft,
       title: draft.title.trim() || 'Untitled rite',
@@ -216,14 +279,15 @@ export function WorkshopProvider({
     // Inscribing finishes the working, so the bench falls back to reading it.
     setMode('view')
     setArmedComponentId(null)
-  }, [draft, repository, write])
+  }, [allowedForms, draft, placements, profile.specialty, repository, spells, write])
 
   const newSpell = useCallback(() => {
-    setDraft(blankSpell())
+    if (!profile.specialty) return
+    setDraft(blankSpell(formsForSpecialty(profile.specialty)[1], profile.specialty))
     setDirty(false)
     setMode('edit')
     setArmedComponentId(null)
-  }, [])
+  }, [profile.specialty])
 
   const selectSpell = useCallback(
     (id: string) => {
@@ -244,12 +308,17 @@ export function WorkshopProvider({
 
       setSpells((current) => current.filter((spell) => spell.id !== id))
       if (draft.id === id) {
-        setDraft(blankSpell())
+        setDraft(
+          blankSpell(
+            profile.specialty ? formsForSpecialty(profile.specialty)[1] : 'prayer',
+            profile.specialty,
+          ),
+        )
         setDirty(false)
         setMode('edit')
       }
     },
-    [draft.id, repository, write],
+    [draft.id, profile.specialty, repository, write],
   )
 
   /** Resolves to false when the write failed, so the editor can stay open on its draft. */
@@ -313,6 +382,9 @@ export function WorkshopProvider({
       loading,
       error,
       dismissError,
+      profile,
+      allowedForms,
+      chooseSpecialty,
       components,
       componentsById,
       spells,
@@ -339,6 +411,9 @@ export function WorkshopProvider({
       loading,
       error,
       dismissError,
+      profile,
+      allowedForms,
+      chooseSpecialty,
       components,
       componentsById,
       spells,

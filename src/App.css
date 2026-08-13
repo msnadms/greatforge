@@ -20,6 +20,7 @@
 
 .workshop__header {
   grid-area: header;
+  position: relative;
   display: flex;
   align-items: baseline;
   gap: 16px;
@@ -112,6 +113,22 @@
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text);
+}
+
+/* -------------------------------------------------------------- specialty */
+
+.specialty-control {
+  position: absolute;
+  left: 50%;
+  width: auto;
+  padding: 2px 22px 2px 4px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font-family: var(--heading);
+  font-size: 20px;
+  color: var(--text-h);
+  transform: translateX(-50%);
 }
 
 /* -------------------------------------------------------------------- level */
@@ -734,7 +751,7 @@
 }
 
 .book__viewCircle {
-  width: 96px;
+  width: 120px;
   margin: 4px auto;
   /* The flipped bottom arc's radius runs past the viewBox on purpose — see
      NUM_RADIUS/NUM_SIZE in Spellbook.tsx — and an SVG clips to its own
@@ -745,7 +762,7 @@
 .book__viewCircleRing {
   fill: none;
   stroke: var(--border-strong);
-  stroke-width: 0.4;
+  stroke-width: 1;
   opacity: 0.9;
 }
 
@@ -760,7 +777,7 @@
 .book__viewNumber--toll {
   /* Same currency hue, pulled darker and toward red so a cost reads as a
      cost even before the two rows are compared. */
-  fill: color-mix(in srgb, hsl(var(--num-hue, 40) var(--gem-s-strong) var(--gem-l)) 55%, #7a1414 45%);
+  fill: color-mix(in srgb, hsl(var(--num-hue, 40) var(--gem-s-strong) var(--gem-l)) 55%, #7a1414 20%);
 }
 
 .book__viewNotes {
@@ -1640,5 +1657,14 @@ body.is-dragging * {
   .slot__sigil svg {
     width: 19px;
     height: 19px;
+  }
+}
+
+@media (max-width: 640px) {
+  .specialty-control {
+    position: static;
+    margin-left: auto;
+    transform: none;
+    font-size: 16px;
   }
 }

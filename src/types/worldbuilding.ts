@@ -36,6 +36,30 @@ export const SPELL_FORMS = [
 export type SpellForm = (typeof SPELL_FORMS)[number]
 
 /**
+ * The rite a caster has trained into their body. A specialty is kept on the
+ * player profile to decide which new workings they may inscribe. New workings
+ * also retain it, so a specialty-specific form keeps the rule it was written
+ * under if its caster later changes discipline.
+ */
+export const CASTER_SPECIALTIES = ['warden', 'invoker', 'mourner'] as const
+
+export type CasterSpecialty = (typeof CASTER_SPECIALTIES)[number]
+
+/** A deliberately small account record, stored beside the seed marker. */
+export interface PlayerProfile {
+  specialty: CasterSpecialty | null
+}
+
+/** Old profiles predate specialties and must choose before writing a new rite. */
+export function normalizePlayerProfile(input: Partial<PlayerProfile> | undefined): PlayerProfile {
+  return {
+    specialty: CASTER_SPECIALTIES.includes(input?.specialty as CasterSpecialty)
+      ? (input?.specialty as CasterSpecialty)
+      : null,
+  }
+}
+
+/**
  * How hard the material is to come by or to make. The resolver never reads it,
  * but the catalog tunes it so scarcity tracks strength: common is any ring's
  * baseline, uncommon is solid but unremarkable, rare is worth building a ring
@@ -227,6 +251,8 @@ export interface Spell {
   title: string
   /** How it is spoken, and an input to the reaction. See `data/spellForms.ts`. */
   form: SpellForm
+  /** Discipline that wrote this rite, retained for specialty-specific form rules. */
+  specialty: CasterSpecialty | null
   /**
    * The power this working was set to. Belongs to the spell rather than the
    * caster: the level scales every placed reagent's ledger before the walk reads
@@ -337,6 +363,9 @@ export function normalizeSpell(input: Partial<Spell> & { id: string }): Spell {
     id: input.id,
     title: input.title ?? '',
     form: SPELL_FORMS.includes(input.form as SpellForm) ? (input.form as SpellForm) : 'prayer',
+    specialty: CASTER_SPECIALTIES.includes(input.specialty as CasterSpecialty)
+      ? (input.specialty as CasterSpecialty)
+      : null,
     casterLevel: normalizeCasterLevel(input.casterLevel),
     text: input.text ?? '',
     notes: input.notes ?? '',

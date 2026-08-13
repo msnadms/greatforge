@@ -2,6 +2,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   getDocs,
   runTransaction,
   serverTimestamp,
@@ -12,7 +13,14 @@ import {
 } from 'firebase/firestore'
 import { isInert } from '../data/currencies'
 import { buildSeedComponents } from '../data/seedComponents'
-import { normalizeComponent, normalizeSpell, type MaterialComponent, type Spell } from '../types/worldbuilding'
+import {
+  normalizeComponent,
+  normalizePlayerProfile,
+  normalizeSpell,
+  type MaterialComponent,
+  type PlayerProfile,
+  type Spell,
+} from '../types/worldbuilding'
 import { db, requireUid } from './firebase'
 import { newId } from './id'
 import type { WorkshopRepository } from './repository'
@@ -83,6 +91,15 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
   }
 
   private inFlight: Promise<MaterialComponent[]> | null = null
+
+  async getProfile(): Promise<PlayerProfile> {
+    const snapshot = await getDoc(this.profileRef(requireUid()))
+    return normalizePlayerProfile(snapshot.exists() ? (snapshot.data() as Partial<PlayerProfile>) : undefined)
+  }
+
+  async saveProfile(profile: PlayerProfile): Promise<void> {
+    await setDoc(this.profileRef(requireUid()), normalizePlayerProfile(profile), { merge: true })
+  }
 
   /**
    * Concurrent loads share one round trip. Without this, StrictMode's doubled mount

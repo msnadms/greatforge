@@ -8,11 +8,14 @@
 import { buildSeedComponents } from '../src/data/seedComponents'
 import { computeReaction } from '../src/lib/reaction'
 import { describeRole } from '../src/data/currencies'
+import { formsForSpecialty } from '../src/data/casterSpecialties'
 import {
+  CASTER_SPECIALTIES,
   CASTER_LEVELS,
   RING_SLOT_COUNT,
   SPELL_FORMS,
   type CasterLevel,
+  type CasterSpecialty,
   type MaterialComponent,
   type Placement,
   type SpellForm,
@@ -33,6 +36,27 @@ function rand(): number {
 
 function isSource(c: MaterialComponent): boolean {
   return describeRole(c) === 'source'
+}
+
+interface FormRun {
+  form: SpellForm
+  specialty: CasterSpecialty | null
+}
+
+/** Legacy forms remain a useful control; new forms are tested under the specialty that writes them. */
+const FORM_RUNS: FormRun[] = [
+  ...SPELL_FORMS.map((form) => ({ form, specialty: null })),
+  ...CASTER_SPECIALTIES.flatMap((specialty) =>
+    formsForSpecialty(specialty).map((form) => ({ form, specialty })),
+  ),
+]
+
+function sourceLimit({ form, specialty }: FormRun): number {
+  return form === 'benediction' && specialty === 'mourner' ? 2 : 1
+}
+
+function runLabel({ form, specialty }: FormRun): string {
+  return specialty ? `${specialty} ${form}` : `legacy ${form}`
 }
 
 /**
@@ -72,8 +96,8 @@ interface Eval {
   feasible: boolean
 }
 
-function evaluate(ring: Placement[], form: SpellForm, level: CasterLevel): Eval {
-  const r = computeReaction(ring, form, level)
+function evaluate(ring: Placement[], run: FormRun, level: CasterLevel): Eval {
+  const r = computeReaction(ring, run.form, level, false, run.specialty)
   const cap = TOLL_CAP_BY_LEVEL[level]
   return { manifestation: r.manifestationTotal, toll: r.tollTotal, feasible: r.tollTotal < cap }
 }
@@ -86,12 +110,12 @@ function evaluate(ring: Placement[], form: SpellForm, level: CasterLevel): Eval 
  * the cap, so a climb that starts over budget still has a gradient back
  * toward feasibility instead of being stuck at a flat, uninformative penalty.
  */
-function score(ring: Placement[], form: SpellForm, level: CasterLevel): number {
-  if (isNetForm(form)) {
-    const r = computeReaction(ring, form, level)
+function score(ring: Placement[], run: FormRun, level: CasterLevel): number {
+  if (isNetForm(run.form)) {
+    const r = computeReaction(ring, run.form, level, false, run.specialty)
     return r.manifestationTotal - r.tollTotal
   }
-  const { manifestation, toll, feasible } = evaluate(ring, form, level)
+  const { manifestation, toll, feasible } = evaluate(ring, run, level)
   return feasible ? 100_000 + manifestation : -toll
 }
 
@@ -105,11 +129,12 @@ function signature(ring: Placement[]): string {
 
 /**
  * Hill-climb from one random start, honoring law 5 throughout the climb (each
- * material once, at most one source) so every ring this produces is one a
- * player could actually build with `placeComponent`. Steepest ascent over a
+ * material once, at most one source except the mourner's benediction) so every
+ * ring this produces is one a player could actually build with
+ * `placeComponent`. Steepest ascent over a
  * frozen ring, same structure as `frontier.ts`'s `best()`.
  */
-function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] } {
+function climb(run: FormRun, level: CasterLevel): Eval & { ring: Placement[] } {
   const count = 1 + Math.floor(rand() * RING_SLOT_COUNT)
   const slots = [...Array(RING_SLOT_COUNT).keys()]
   for (let i = slots.length - 1; i > 0; i--) {
@@ -119,8 +144,8 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
   const pool = [...CATALOG]
   const ring: Placement[] = []
   for (const slotIndex of slots.slice(0, count)) {
-    const hasSource = ring.some((p) => isSource(p.component))
-    const candidates = hasSource ? pool.filter((c) => !isSource(c)) : pool
+    const sources = ring.filter((p) => isSource(p.component)).length
+    const candidates = sources >= sourceLimit(run) ? pool.filter((c) => !isSource(c)) : pool
     if (candidates.length === 0) continue
     const idx = Math.floor(rand() * candidates.length)
     const component = candidates[idx]
@@ -129,7 +154,7 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
   }
 
   let current = ring
-  let value = score(current, form, level)
+  let value = score(current, run, level)
 
   for (;;) {
     const used = new Set(current.map((p) => p.component.id))
@@ -140,7 +165,7 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
     let bestMoveValue = value
 
     const consider = (candidate: Placement[]): void => {
-      const v = score(candidate, form, level)
+      const v = score(candidate, run, level)
       if (v > bestMoveValue) {
         bestMoveValue = v
         bestMove = candidate
@@ -150,10 +175,10 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
     // Replace, relocate, or lift each occupant.
     for (const placement of current) {
       const others = current.filter((p) => p !== placement)
-      const othersHaveSource = others.some((p) => isSource(p.component))
+      const otherSources = others.filter((p) => isSource(p.component)).length
       for (const component of CATALOG) {
         if (used.has(component.id)) continue
-        if (othersHaveSource && isSource(component)) continue
+        if (otherSources >= sourceLimit(run) && isSource(component)) continue
         consider([...others, { slotIndex: placement.slotIndex, component }])
       }
       for (const slotIndex of open) {
@@ -162,11 +187,11 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
       consider(others)
     }
     // Add a reagent into any open slot.
-    const hasSource = current.some((p) => isSource(p.component))
+    const sources = current.filter((p) => isSource(p.component)).length
     for (const slotIndex of open) {
       for (const component of CATALOG) {
         if (used.has(component.id)) continue
-        if (hasSource && isSource(component)) continue
+        if (sources >= sourceLimit(run) && isSource(component)) continue
         consider([...current, { slotIndex, component }])
       }
     }
@@ -176,10 +201,12 @@ function climb(form: SpellForm, level: CasterLevel): Eval & { ring: Placement[] 
     value = bestMoveValue
   }
 
-  return { ...evaluate(current, form, level), ring: current }
+  return { ...evaluate(current, run, level), ring: current }
 }
 
-const RESTARTS_PER_FORM = 350
+// The specialty matrix has 59 form/level runs. 250 restarts keeps the full,
+// deterministic regeneration inside the ten-minute local harness window.
+const RESTARTS_PER_FORM = 250
 const TOP_N = 10
 
 interface Found {
@@ -190,21 +217,23 @@ interface Found {
 
 /** Every (form, level) pair this generator climbs. Net forms climb once, at
  * `NET_FORM_LEVEL`; capped forms climb once per caster level. */
-const JOBS: { form: SpellForm; level: CasterLevel }[] = SPELL_FORMS.flatMap((form) =>
-  isNetForm(form)
-    ? [{ form, level: NET_FORM_LEVEL }]
-    : CASTER_LEVELS.map((level) => ({ form, level })),
+const JOBS: (FormRun & { level: CasterLevel })[] = FORM_RUNS.flatMap((run) =>
+  isNetForm(run.form)
+    ? [{ ...run, level: NET_FORM_LEVEL }]
+    : CASTER_LEVELS.map((level) => ({ ...run, level })),
 )
 
 const results = new Map<string, Found[]>()
-const jobKey = (form: SpellForm, level: CasterLevel): string => `${form}:${level}`
+const jobKey = ({ form, specialty }: FormRun, level: CasterLevel): string =>
+  `${specialty ?? 'legacy'}:${form}:${level}`
 
-for (const { form, level } of JOBS) {
-  state = 0xf00d0000 + JOBS.findIndex((j) => j.form === form && j.level === level) * 0x1000
+for (const run of JOBS) {
+  const { level } = run
+  state = 0xf00d0000 + JOBS.indexOf(run) * 0x1000
   const seen = new Map<string, Found>()
-  const net = isNetForm(form)
+  const net = isNetForm(run.form)
   for (let i = 0; i < RESTARTS_PER_FORM; i++) {
-    const { manifestation, toll, feasible, ring } = climb(form, level)
+    const { manifestation, toll, feasible, ring } = climb(run, level)
     // A capped-form climb that never found its way under the cap has
     // nothing this report wants — the whole point is the best ring
     // *within* the cap. A net-form climb has no cap to fail.
@@ -217,7 +246,7 @@ for (const { form, level } of JOBS) {
   }
   const rank = (f: Found) => (net ? f.manifestation - f.toll : f.manifestation)
   const top = [...seen.values()].sort((a, b) => rank(b) - rank(a)).slice(0, TOP_N)
-  results.set(jobKey(form, level), top)
+  results.set(jobKey(run, level), top)
 }
 
 // ------------------------------------------------------------- emit the module
@@ -236,16 +265,18 @@ out += ' * manifestation a ring can deliver while keeping toll under that level\
 out += ' * (5 at level 1, scaling to 15 at level 5) — 10 rings per level, 50 per form\n'
 out += ' * — and a climb that never gets under the cap is dropped rather than\n'
 out += ' * reported. Every ring honors law 5 throughout the climb (each material\n'
-out += ' * once, at most one source), so each is one a player could actually place\n'
-out += " * with `placeComponent`. Regenerate by re-running the generator when the\n"
+out += ' * once, at most one source except a mourner\'s benediction), so each is one a\n'
+out += " * player could actually place with `placeComponent`. Regenerate by re-running the generator when the\n"
 out += ' * catalog changes shape enough that the frontier might have moved — do not\n'
 out += ' * hand-edit the placements below.\n'
 out += ' */\n'
-out += "import type { CasterLevel, SpellForm } from '../src/types/worldbuilding'\n\n"
+out += "import type { CasterLevel, CasterSpecialty, SpellForm } from '../src/types/worldbuilding'\n\n"
 out += '/** Climbed against net rather than a toll cap — see the module doc above. */\n'
 out += `export const NET_OPTIMIZED_FORMS: SpellForm[] = ${JSON.stringify(NET_FORMS)}\n\n`
 out += 'export interface NearOptimalRing {\n'
 out += '  form: SpellForm\n'
+out += '  /** Specialty that wrote the form, or null for a legacy/base form. */\n'
+out += '  specialty: CasterSpecialty | null\n'
 out += '  /** The caster level this ring was climbed and resolved at. */\n'
 out += '  level: CasterLevel\n'
 out += '  /** Manifestation delivered under this ring\'s own form and level, at the climb\'s objective. */\n'
@@ -256,9 +287,9 @@ out += '  toll: number\n'
 out += '  placements: { slotIndex: number; component: string }[]\n'
 out += '}\n\n'
 out += 'export const NEAR_OPTIMAL_RINGS: NearOptimalRing[] = [\n'
-for (const { form, level } of JOBS) {
-  for (const { manifestation, toll, ring } of results.get(jobKey(form, level))!) {
-    out += `  {\n    form: '${form}',\n    level: ${level},\n    manifestation: ${manifestation},\n    toll: ${toll},\n    placements: [\n`
+for (const run of JOBS) {
+  for (const { manifestation, toll, ring } of results.get(jobKey(run, run.level))!) {
+    out += `  {\n    form: '${run.form}',\n    specialty: ${JSON.stringify(run.specialty)},\n    level: ${run.level},\n    manifestation: ${manifestation},\n    toll: ${toll},\n    placements: [\n`
     for (const p of ring.slice().sort((a, b) => a.slotIndex - b.slotIndex)) {
       out += `      { slotIndex: ${p.slotIndex}, component: ${JSON.stringify(p.component.name)} },\n`
     }
@@ -272,9 +303,9 @@ console.log(out)
 // Sanity table, kept off stdout so it doesn't corrupt the module above when redirected.
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII']
 console.error('\n=== near-optimal rings found per form ===')
-for (const { form, level } of JOBS) {
-  const found = results.get(jobKey(form, level))!
-  const label = isNetForm(form) ? form : `${form} @ level ${level}`
+for (const run of JOBS) {
+  const found = results.get(jobKey(run, run.level))!
+  const label = isNetForm(run.form) ? runLabel(run) : `${runLabel(run)} @ level ${run.level}`
   console.error(`\n${label}: (${found.length} found)`)
   for (const { manifestation, toll, ring } of found) {
     const shown = ring

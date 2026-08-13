@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { CURRENCY_META, describeLedger } from '../data/currencies'
-import { FORM_LIST, FORM_META, UNDERFED_RULE } from '../data/spellForms'
+import { FORM_META, UNDERFED_RULE, formLabelFor } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, type SpellForm } from '../types/worldbuilding'
@@ -78,6 +78,7 @@ function hemisphereLayout(center: number, count: number): { path: string; offset
 function BookView() {
   const { draft, editDraft, reaction } = useWorkshop()
   const form = FORM_META[draft.form]
+  const formLabel = formLabelFor(draft.form, draft.specialty)
   const manifestEntries = ledgerEntries(reaction.manifestation).sort((a, b) => b[1] - a[1])
   const tollEntries = ledgerEntries(reaction.toll).sort((a, b) => b[1] - a[1])
   const manifestLayout = hemisphereLayout(-90, manifestEntries.length)
@@ -88,7 +89,7 @@ function BookView() {
       <div className="book__page book__page--left">
         <h2 className="book__viewTitle">{draft.title || 'Untitled rite'}</h2>
         <p className="book__viewForm">
-          {form.article === 'an' ? 'An' : 'A'} {form.label.toLowerCase()}, worked at level{' '}
+          {form.article === 'an' ? 'An' : 'A'} {formLabel.toLowerCase()}, worked at scale{' '}
           {draft.casterLevel}.
         </p>
         {manifestEntries.length > 0 || tollEntries.length > 0 ? (
@@ -148,7 +149,7 @@ function BookView() {
 }
 
 function BookEditor() {
-  const { draft, updateDraft, saveDraft, reaction } = useWorkshop()
+  const { allowedForms, draft, updateDraft, saveDraft, reaction } = useWorkshop()
   const [expanded, setExpanded] = useState<boolean>(false)
 
   return (
@@ -181,11 +182,19 @@ function BookEditor() {
             value={draft.form}
             onChange={(event) => updateDraft({ form: event.target.value as SpellForm })}
           >
-            {FORM_LIST.map((entry) => (
-              <option key={entry.form} value={entry.form} title={UNDERFED_RULE[entry.underfed]}>
-                {entry.label}
+            {!allowedForms.includes(draft.form) ? (
+              <option value={draft.form} disabled>
+                {formLabelFor(draft.form, draft.specialty)} (legacy rite)
               </option>
-            ))}
+            ) : null}
+            {allowedForms.map((form) => {
+              const entry = FORM_META[form]
+              return (
+              <option key={entry.form} value={entry.form} title={UNDERFED_RULE[entry.underfed]}>
+                {formLabelFor(entry.form, draft.specialty)}
+              </option>
+              )
+            })}
           </select>
         </label>
 

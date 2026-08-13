@@ -1,5 +1,5 @@
 import { isRelay } from '../data/currencies'
-import { ELEGY_GRIEF, FORM_META, conditionRelief, type ConditionContext } from '../data/spellForms'
+import { ELEGY_GRIEF, FORM_META, conditionFor, conditionRelief, type ConditionContext } from '../data/spellForms'
 import {
   LEVEL_POWER,
   RING_SLOT_COUNT,
@@ -14,6 +14,7 @@ import {
   normalizeLedger,
   transitScale,
   type CasterLevel,
+  type CasterSpecialty,
   type Currency,
   type Ledger,
   type MaterialComponent,
@@ -67,6 +68,8 @@ export interface SlotReport {
 export interface Reaction {
   /** The form the ring was resolved under. The same reagents differ across the seven. */
   form: SpellForm
+  /** Discipline recorded on the rite, which selects any specialty form condition. */
+  specialty: CasterSpecialty | null
   /**
    * Whether the ring satisfied what the form asks of it. `null` where there is no
    * verdict: the prayer, which asks nothing, and a cold circle, which has neither
@@ -122,13 +125,17 @@ interface Parcel {
 // `conditionRelief` short-circuits on an empty ring before it ever reaches a
 // condition's `test`, so this is never actually asked anything — it exists
 // only because the parameter is required.
-const NO_PLACEMENTS_CONTEXT: ConditionContext = { fedUnderBaseline: () => false }
+const NO_PLACEMENTS_CONTEXT: ConditionContext = {
+  fedUnderBaseline: () => false,
+  touchedUnderBaseline: () => false,
+}
 
-function emptyReaction(form: SpellForm): Reaction {
+function emptyReaction(form: SpellForm, specialty: CasterSpecialty | null): Reaction {
   return {
     form,
+    specialty,
     // A cold circle has no verdict: `conditionRelief` returns null for it.
-    conditionMet: conditionRelief(form, [], NO_PLACEMENTS_CONTEXT).met,
+    conditionMet: conditionRelief(form, [], NO_PLACEMENTS_CONTEXT, specialty).met,
     filled: 0,
     completion: 0,
     slots: [],
@@ -162,6 +169,11 @@ export function buildConditionContext(placements: Placement[], level: CasterLeve
       if (!baseline) baseline = computeReaction(placements, 'prayer', level, true)
       const report = baseline.slots.find((s) => s.slotIndex === slotIndex)
       return report ? ledgerTotal(report.shortfall) === 0 : false
+    },
+    touchedUnderBaseline: (slotIndex: number) => {
+      if (!baseline) baseline = computeReaction(placements, 'prayer', level, true)
+      const report = baseline.slots.find((s) => s.slotIndex === slotIndex)
+      return report ? ledgerTotal(report.received) > 0 : false
     },
   }
 }
@@ -203,11 +215,13 @@ export function computeReaction(
   form: SpellForm,
   level: CasterLevel = 5,
   pessimistic = false,
+  specialty: CasterSpecialty | null = null,
 ): Reaction {
-  if (placements.length === 0) return emptyReaction(form)
+  if (placements.length === 0) return emptyReaction(form, specialty)
 
   const { underfed } = FORM_META[form]
-  const relief = conditionRelief(form, placements, buildConditionContext(placements, level))
+  const relief = conditionRelief(form, placements, buildConditionContext(placements, level), specialty)
+  const metTransit = relief.met ? conditionFor(form, specialty)?.metTransit : undefined
   const transitFactor = transitScale(relief.transit)
   const demandForCaster = (ledger: Ledger): Ledger =>
     scaleLedger(ledger, level, pessimistic ? Math.ceil : Math.round)
@@ -247,12 +261,16 @@ export function computeReaction(
 
   function baseTransitCost(slotIndex: number): number {
     const occupant = byIndex.get(slotIndex)
-    const stated = !occupant
-      ? TRANSIT_LOSS_GAP
-      : isRelay(occupant)
-        ? TRANSIT_LOSS_RELAY
-        : TRANSIT_LOSS_REAGENT
-    const exact = stated * TRANSIT_POWER[level] * transitFactor
+    const stated = metTransit
+      ? !occupant
+        ? metTransit.gap
+        : metTransit.reagent
+      : !occupant
+        ? TRANSIT_LOSS_GAP
+        : isRelay(occupant)
+          ? TRANSIT_LOSS_RELAY
+          : TRANSIT_LOSS_REAGENT
+    const exact = stated * TRANSIT_POWER[level] * (metTransit ? 1 : transitFactor)
     if (exact <= 0) return 0
     const owed = exact + transitCarry
     const charged = Math.max(0, (pessimistic ? Math.ceil : Math.round)(owed))
@@ -583,6 +601,7 @@ export function computeReaction(
 
   return {
     form,
+    specialty,
     conditionMet: relief.met,
     filled: placements.length,
     completion,

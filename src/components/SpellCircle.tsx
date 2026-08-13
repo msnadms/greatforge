@@ -347,8 +347,8 @@ export function SpellCircle({ children }: { children: ReactNode }) {
 
   /** The slots the spoken form's condition names, marked whether it holds or not. */
   const named = useMemo(
-    () => conditionSlots(draft.form, placements),
-    [draft.form, placements],
+    () => conditionSlots(draft.form, placements, draft.specialty),
+    [draft.form, draft.specialty, placements],
   )
 
   /** How each slot resolved, keyed by slot. */

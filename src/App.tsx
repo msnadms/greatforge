@@ -6,19 +6,26 @@ import { SpellCircle } from './components/SpellCircle'
 import { SpellList } from './components/SpellList'
 import { Spellbook } from './components/Spellbook'
 import { StorageAlert } from './components/StorageAlert'
+import { SpecialtyControl } from './components/SpecialtyControl'
 import { AuthProvider } from './state/AuthProvider'
 import { DragProvider } from './state/DragProvider'
 import { useAuth } from './state/useAuth'
+import { useWorkshop } from './state/useWorkshop'
 import { WorkshopProvider } from './state/WorkshopProvider'
 import './App.css'
 
 function Workshop() {
+  const { loading } = useWorkshop()
+
+  if (loading) return <div className="gate" />
+
   return (
     <DragProvider>
       <div className="workshop">
         <header className="workshop__header">
           <h1>Greatforge</h1>
           <p>Spell workshop</p>
+          <SpecialtyControl />
           <StorageAlert />
           <AccountBadge />
         </header>

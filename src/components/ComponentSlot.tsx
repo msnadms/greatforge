@@ -14,7 +14,7 @@ interface ComponentSlotProps {
   armedComponentId: string | null
   /** How the ring resolved this slot. Null for an empty slot and a cold circle. */
   report: SlotReport | null
-  /** This slot is one the spoken form's condition speaks about. */
+  /** This slot is one the spoken form's melody speaks about. */
   named?: boolean
   /** Viewing an inscribed working: the slot is a diagram, not a control. */
   readOnly?: boolean
@@ -83,7 +83,7 @@ export function ComponentSlot({
     : ', empty'
   const where = `Slot ${index + 1}${standing}.`
   const toll = starved ? ` Starved by ${ledgerTotal(shortfall)}. ${starvation}` : ''
-  const asked = named ? " Named by the form's condition." : ''
+  const asked = named ? " Named by the form's melody." : ''
   const label = readOnly
     ? `${where}${toll}${asked}`
     : armed

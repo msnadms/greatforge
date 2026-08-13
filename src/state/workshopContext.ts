@@ -1,6 +1,6 @@
 import { createContext } from 'react'
 import type { Reaction } from '../lib/reaction'
-import type { MaterialComponent, Placement, Spell } from '../types/worldbuilding'
+import type { CasterSpecialty, MaterialComponent, Placement, PlayerProfile, Spell, SpellForm } from '../types/worldbuilding'
 
 /** Fields the editor collects; ids and timestamps are managed by the workshop. */
 export type ComponentDraft = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updatedAt'>
@@ -19,6 +19,10 @@ export interface WorkshopValue {
   /** Last storage failure, or null. Firestore can fail where localStorage could not. */
   error: string | null
   dismissError: () => void
+  /** The current caster's chosen discipline; null until their first choice. */
+  profile: PlayerProfile
+  allowedForms: readonly SpellForm[]
+  chooseSpecialty: (specialty: CasterSpecialty) => Promise<boolean>
   components: MaterialComponent[]
   componentsById: Map<string, MaterialComponent>
   spells: Spell[]

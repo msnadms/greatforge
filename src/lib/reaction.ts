@@ -346,8 +346,11 @@ function resolveReaction(
    * **A relay crosses free on every path, a stated pair included.** Law 2 says
    * "none through a relay, wherever it stands", and a stated cost is still a
    * crossing price rather than an exemption from the one rule the resolver
-   * asks a component about. This was invisible while the only `metTransit`
-   * set `reagent: 0`; it is not now that one charges for a reagent crossing.
+   * asks a component about. It only shows on a stated pair that charges
+   * something for a reagent crossing, and the one stated pair sets
+   * `reagent: 0`, so it is latent today. Keep it: the ordering is what makes
+   * law 2 true of any pair a future specialty states, not an optimization for
+   * the pair that happens to exist.
    */
   function statedTransitCost(occupant: MaterialComponent | undefined): number {
     if (occupant && isRelay(occupant)) return TRANSIT_LOSS_RELAY

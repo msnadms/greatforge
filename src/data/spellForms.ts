@@ -541,29 +541,45 @@ const SPECIALTY_LITANY_CONDITIONS: Partial<Record<CasterSpecialty, FormCondition
         .map((placement) => placement.slotIndex),
   },
   invoker: {
-    statement: 'At least one relay stands in the ring, and at least three reagents demand a currency another reagent yields.',
+    statement: 'At least one relay stands in the ring, at least three reagents demand a currency another reagent yields, and at least one slot is empty.',
     loss: 'both',
     reward: 'halved',
-    // Half price between voices, plain price across a silence.
+    // Nothing between voices, the plain price across a silence.
     //
-    // **It shipped at `reagent: 0` and that handed it the invocation's whole
-    // prize.** Nothing in this condition asks the ring to stay open, so its
-    // best rings were closed eight-reagent circles, where there is no gap for
-    // the `gap` half of this rule to charge — every crossing free, `bled` 0,
-    // on a bar of one relay and three linked reagents rather than eight
-    // filled slots. All ten of its frontier rings were that shape, at 57 net
-    // against the invocation's own 54.6. Same defect the ward had (see its
-    // entry in `FORM_META`): a form that does not require an open ring must
-    // not buy a free lap, or it dominates the form built for the closed one.
+    // **The free crossing shipped without the silence, and that handed the
+    // invocation's whole prize to a far easier bar.** Nothing in the condition
+    // asked the ring to stay open, so its best rings were closed eight-reagent
+    // circles where no gap exists for the `gap` half of this rule to charge:
+    // every crossing free, `bled` 0, on one relay and three linked reagents
+    // rather than eight filled slots. All ten of its frontier rings were that
+    // shape, at 57 net against the invocation's own 54.6. The rule it broke is
+    // the one the ward's entry states: a form that does not require an open
+    // ring must not buy a free lap, or it dominates the form built for the
+    // closed one.
     //
-    // Half price still pays a met litany's way on a full ring, and the relay
-    // exemption below it means seating more relays cuts the lap further —
-    // against the yield those slots give up, since a relay hands back exactly
-    // what it took. That tradeoff is the form's, and it is the reason this
-    // stays `metTransit` rather than falling back to a plain halved reward:
-    // meeting the condition discounts the reagents it names and leaves a
-    // silence at its ordinary price.
-    metTransit: { reagent: TRANSIT_LOSS_REAGENT * transitScale('halved'), gap: TRANSIT_LOSS_GAP },
+    // Charging half between reagents was the first fix and it treated the
+    // symptom. It left the litany buildable on the invocation's own ring and
+    // simply worse there, losing on 4986 of 5000 random full rings, which is
+    // a redundant form rather than a rival one. Asking for the silence is the
+    // fix at the root: the free crossing is no longer something the invocation
+    // could also have, because the invocation's ring has no silence in it.
+    //
+    // What it buys, on the common and uncommon envelope `sim/generateNearOptimal.ts`
+    // measures, at level 5: the best ring an invoker can build from a stock of
+    // 5, 6 or 7 reagents is now this form (32, 41 and 50 net, against the
+    // Herald Benediction's 32 and the prayer's 35 at seven), where the closed
+    // ring stays the invocation's at 8 (60). Per reagent spent the two forms
+    // nearly level, 7.1 against 7.5, and weighted by rarity they tie at 4.8.
+    // Its own full-ring option falls to 34, which is the point.
+    //
+    // A relay standing here saves nothing it was not already saving: the
+    // stated reagent price is 0, so `statedTransitCost`'s relay branch and
+    // this pair agree to the unit. That branch is still right to answer the
+    // relay first (law 2 binds every stated pair, not this one), it just has
+    // nothing to change here. `metTransit` rather than a plain reward because
+    // the two halves differ: the reagents the condition names cross for
+    // nothing, and the silence it requires costs full price.
+    metTransit: { reagent: 0, gap: TRANSIT_LOSS_GAP },
     test: (placements) =>
       slotsWithRole(placements, 'relay').length >= 1 &&
       placements.filter((placement) =>
@@ -575,7 +591,11 @@ const SPECIALTY_LITANY_CONDITIONS: Partial<Record<CasterSpecialty, FormCondition
                 other !== placement && (other.component.yields[currency] ?? 0) > 0,
             ),
         ),
-      ).length >= 3,
+      ).length >= 3 &&
+      placements.length < RING_SLOT_COUNT,
+    // The relays and the reagents that answer one another. The silence is a
+    // count rather than a particular slot, so there is nothing there to mark,
+    // the same reading the ward's threshold takes of its own two empty slots.
     slots: (placements) =>
       placements
         .filter(

@@ -4,7 +4,7 @@ import { CURRENCY_META, describeLedger } from '../data/currencies'
 import { FORM_META, UNDERFED_RULE, articleFor, formLabelFor } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
-import { ledgerEntries, type SpellForm } from '../types/worldbuilding'
+import { ledgerEntries, type Currency, type SpellForm } from '../types/worldbuilding'
 import { LevelControl } from './LevelControl'
 
 /** A point on the number circle, by angle in degrees clockwise from due right. */
@@ -74,6 +74,81 @@ function hemisphereLayout(center: number, count: number): { path: string; offset
   return { path, offsets }
 }
 
+/**
+ * What a working has to move, manifestation and toll together, before the ring
+ * is washed at full strength. A hill-climbed frontier manifests in the mid
+ * fifties at full power and a careless ring tolls about as much again, so 100
+ * is a figure a working reaches rather than an arbitrary ceiling.
+ */
+const FULL_WASH = 100
+
+/** Paler than the `--gem-s` the numbers outside are drawn at, since the ring
+ *  carries a whole wheel at once where a numeral carries one hue. Taken off the
+ *  token rather than written flat, so it stays tuned per theme. */
+function pigment(hue: number, alpha: number): string {
+  return `hsl(${hue} calc(var(--gem-s) * 0.55) var(--gem-l) / ${alpha})`
+}
+
+/** The same treatment the toll numbers take: the currency's own hue pulled
+ *  darker and toward red, so a cost reads as a cost. The red carries the same
+ *  alpha, or a toll would wash heavier than a manifestation of equal size. */
+function cost(hue: number, alpha: number): string {
+  return `color-mix(in srgb, ${pigment(hue, alpha)} 55%, rgb(122 20 20 / ${alpha}) 20%)`
+}
+
+/**
+ * Everything the working moves, as a wheel inside the ring: what it manifests
+ * and what it tolls in one turn, each currency taking the arc its share of the
+ * whole earns, clockwise from the top. What is delivered comes first in its own
+ * colours, what is paid follows in the darker ones the toll numbers use.
+ *
+ * One stop per arc, set at the middle of it rather than at both ends, so the
+ * colours turn into each other instead of drawing pie slices; the wheel is a
+ * proportion, not a row of separate readings.
+ *
+ * **The wheel is closed by hand.** A conic gradient holds its first colour flat
+ * from 0deg to the first stop and its last flat to 360deg, which draws a hard
+ * edge straight up from the centre where the wheel meets itself. The blend the
+ * browser will not make across that seam is mixed here instead — the two stops
+ * either side of it, weighted by how far apart they sit — and set at both ends,
+ * so the gradient runs continuously round.
+ *
+ * Returns null for a working that neither manifests nor tolls, which leaves the
+ * ring bare.
+ */
+function washGradient(
+  manifestEntries: [Currency, number][],
+  tollEntries: [Currency, number][],
+): string | null {
+  const arcs = [
+    ...manifestEntries.map(([currency, amount]) => ({ currency, amount, tone: pigment })),
+    ...tollEntries.map(([currency, amount]) => ({ currency, amount, tone: cost })),
+  ]
+  const total = arcs.reduce((sum, arc) => sum + arc.amount, 0)
+  if (total === 0) return null
+
+  // Kept well under an opaque fill: this is a page being read, not a signal.
+  const alpha = 0.16 + 0.44 * Math.min(1, total / FULL_WASH)
+
+  const colors: string[] = []
+  const mids: number[] = []
+  let covered = 0
+  for (const arc of arcs) {
+    const share = arc.amount / total
+    colors.push(arc.tone(CURRENCY_META[arc.currency].hue, alpha))
+    mids.push((covered + share / 2) * 360)
+    covered += share
+  }
+
+  // Zero entries are dropped from a ledger, so both halves of the gap are real.
+  const last = mids.length - 1
+  const toFirst = 360 - mids[last]
+  const seam = `color-mix(in srgb, ${colors[0]} ${(toFirst / (toFirst + mids[0])) * 100}%, ${colors[last]})`
+  const stops = colors.map((color, i) => `${color} ${mids[i]}deg`)
+
+  return `conic-gradient(${[`${seam} 0deg`, ...stops, `${seam} 360deg`].join(', ')})`
+}
+
 /** The book's unwritten text keeps only the consequence, not its currency heading. */
 function consequenceAfterColon(description: string): string {
   const colon = description.indexOf(':')
@@ -89,6 +164,7 @@ function BookView() {
   const tollEntries = ledgerEntries(reaction.toll).sort((a, b) => b[1] - a[1])
   const manifestLayout = hemisphereLayout(-90, manifestEntries.length)
   const tollLayout = hemisphereLayout(90, tollEntries.length)
+  const wash = washGradient(manifestEntries, tollEntries)
   const unwrittenText = [
     ...manifestEntries.map(([currency, amount]) => ({ amount, description: CURRENCY_META[currency].vent })),
     ...tollEntries.map(([currency, amount]) => ({ amount, description: CURRENCY_META[currency].toll })),
@@ -107,40 +183,45 @@ function BookView() {
           {draft.casterLevel}.
         </p>
         {manifestEntries.length > 0 || tollEntries.length > 0 ? (
-          <svg
-            className="book__viewCircle"
-            viewBox="0 0 100 100"
-            role="img"
-            aria-label={`Manifests ${describeLedger(reaction.manifestation)}. Tolls ${describeLedger(reaction.toll)}.`}
-          >
-            <circle className="book__viewCircleRing" cx="50" cy="50" r={RING_RADIUS} />
-            <defs>
-              <path id="book-arc-top" d={manifestLayout.path} />
-              <path id="book-arc-bottom" d={tollLayout.path} />
-            </defs>
-            {manifestEntries.map(([currency, amount], i) => (
-              <text
-                key={currency}
-                className="book__viewNumber"
-                style={{ '--num-hue': CURRENCY_META[currency].hue } as CSSProperties}
-              >
-                <textPath href="#book-arc-top" startOffset={`${manifestLayout.offsets[i]}%`}>
-                  {amount}
-                </textPath>
-              </text>
-            ))}
-            {tollEntries.map(([currency, amount], i) => (
-              <text
-                key={currency}
-                className="book__viewNumber book__viewNumber--toll"
-                style={{ '--num-hue': CURRENCY_META[currency].hue } as CSSProperties}
-              >
-                <textPath href="#book-arc-bottom" startOffset={`${tollLayout.offsets[i]}%`}>
-                  {amount}
-                </textPath>
-              </text>
-            ))}
-          </svg>
+          <div className="book__viewCircleWrap">
+            {/* A conic gradient, so the wash is an element under the ring rather
+                than a fill in it — SVG has no angular gradient to give a circle. */}
+            {wash ? <span className="book__viewWash" style={{ background: wash }} /> : null}
+            <svg
+              className="book__viewCircle"
+              viewBox="0 0 100 100"
+              role="img"
+              aria-label={`Manifests ${describeLedger(reaction.manifestation)}. Tolls ${describeLedger(reaction.toll)}.`}
+            >
+              <circle className="book__viewCircleRing" cx="50" cy="50" r={RING_RADIUS} />
+              <defs>
+                <path id="book-arc-top" d={manifestLayout.path} />
+                <path id="book-arc-bottom" d={tollLayout.path} />
+              </defs>
+              {manifestEntries.map(([currency, amount], i) => (
+                <text
+                  key={currency}
+                  className="book__viewNumber"
+                  style={{ '--num-hue': CURRENCY_META[currency].hue } as CSSProperties}
+                >
+                  <textPath href="#book-arc-top" startOffset={`${manifestLayout.offsets[i]}%`}>
+                    {amount}
+                  </textPath>
+                </text>
+              ))}
+              {tollEntries.map(([currency, amount], i) => (
+                <text
+                  key={currency}
+                  className="book__viewNumber book__viewNumber--toll"
+                  style={{ '--num-hue': CURRENCY_META[currency].hue } as CSSProperties}
+                >
+                  <textPath href="#book-arc-bottom" startOffset={`${tollLayout.offsets[i]}%`}>
+                    {amount}
+                  </textPath>
+                </text>
+              ))}
+            </svg>
+          </div>
         ) : null}
         {draft.notes ? <p className="book__viewNotes">{draft.notes}</p> : null}
       </div>

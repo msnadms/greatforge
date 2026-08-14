@@ -1,8 +1,10 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FORM_LIST } from '../data/spellForms'
+import type { FlowGeometry } from '../lib/circleFlow'
 import { computeReaction, resolvePlacements } from '../lib/reaction'
 import { useWorkshop } from '../state/useWorkshop'
 import type { MaterialComponent, Spell, SpellForm } from '../types/worldbuilding'
+import { CircleFlow } from './CircleFlow'
 
 /**
  * The band a rite's title is engraved along, in the 100-unit box the entry is
@@ -17,6 +19,25 @@ const TITLE_PATH = `M 50 ${50 + TITLE_RADIUS} A ${TITLE_RADIUS} ${TITLE_RADIUS} 
 
 /** The whole band, which is what a title is free to use before it laps itself. */
 const BAND_LENGTH = 2 * Math.PI * TITLE_RADIUS
+
+/** The disc the title is engraved around, and the current runs on the edge of. */
+const DISC_RADIUS = TITLE_RADIUS - 8
+
+/**
+ * The same current the bench draws, at the size of an entry. It runs at the
+ * disc's own radius rather than inside it, so the current *is* the entry's
+ * rim: an unbroken circle where the ring carries all the way round, and a rim
+ * with gaps in it where the current dies. The disc's own stroke stays
+ * underneath as the socket it runs in, which is what an entry holding nothing
+ * still draws.
+ *
+ * The ring alone, with no `manifest` fan: what a rite delivers is already the
+ * figure standing in the middle of the entry, and the lines drawn for it on the
+ * bench have a margin to reach into that an entry does not.
+ */
+const RITE_FLOW: Omit<FlowGeometry, 'idPrefix'> = {
+  flowRadius: DISC_RADIUS,
+}
 
 /**
  * A title runs the whole way round, and is cut only if it would come back over
@@ -85,6 +106,18 @@ function Rite({ spell, active, componentsById, onOpen, onDelete }: RiteProps) {
 
   const summary = `${spell.form} · ${filled} component${filled === 1 ? '' : 's'}`
 
+  // Gradient ids are document-wide and the shelf draws one circle per rite, so
+  // each entry mints its own under its own id.
+  const geometry = useMemo<FlowGeometry>(
+    () => ({ ...RITE_FLOW, idPrefix: `rite-${spell.id}` }),
+    [spell.id],
+  )
+
+  const first = useMemo(
+    () => reaction.slots.find((slot) => slot.slotIndex === 0) ?? null,
+    [reaction.slots],
+  )
+
   return (
     <li className={`spells__item${active ? ' spells__item--active' : ''}`}>
       <button
@@ -98,7 +131,9 @@ function Rite({ spell, active, componentsById, onOpen, onDelete }: RiteProps) {
           <defs>
             <path id={`rite-title-${spell.id}`} d={TITLE_PATH} />
           </defs>
-          <circle className="spells__disc" cx="50" cy="50" r={TITLE_RADIUS - 8} />
+          <circle className="spells__disc" cx="50" cy="50" r={DISC_RADIUS} />
+          <CircleFlow block="spells" geometry={geometry} carrying={reaction.carrying} first={first} />
+          {/* Engraved after the rim, so a title crossing it is legible. */}
           <EngravedTitle pathId={`rite-title-${spell.id}`} title={title} />
         </svg>
         <span className="spells__figures">

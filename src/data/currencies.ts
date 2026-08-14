@@ -94,9 +94,10 @@ export const CURRENCY_LIST: CurrencyMeta[] = CURRENCIES.map((c) => CURRENCY_META
  * The whole system, stated. A hard magic is one the reader can do arithmetic in,
  * so these are shown in the app rather than kept in a designer's notebook.
  *
- * Six of the eight hold without exception. The seventh bounds the three things a
- * form is permitted to change — the underfed rule, which loss its condition
- * spares or doubles, and elegy's capped grief — and any law a form can touch points at it. The eighth
+ * Six of the eight hold without exception. The seventh bounds what a form is
+ * permitted to change — the underfed rule, which loss its condition spares or
+ * doubles, and the one further clause four of them carry (elegy's grief, the
+ * dirge's preservation, the ward's doorway, the invocation's fold) — and any law a form can touch points at it. The eighth
  * just says what number a reagent's ledger holds before the walk reads it, so
  * it needed nothing above it to bend.
  *
@@ -111,11 +112,11 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'The current runs one way',
-    body: 'Clockwise, and each crossing is charged against the current as a whole, one currency or five: four units through a gap, two through an ordinary reagent, none through a relay, wherever it stands. A relay is a reagent whose two columns read alike to the unit; one unit either way and it is something else, costing the ordinary crossing. The price is billed to the currency the next slot demanded first, so a supply pays its own way to the reagent waiting on it, and whatever is left is shared across everything else still in flight in proportion to what it carries, its unrounded share banked and carried to the next crossing rather than forgiven. A form may waive these prices or double them; see the seventh law.',
+    body: 'Clockwise, and each crossing is charged against the current as a whole, one currency or five: at full power, four units through a gap, two through an ordinary reagent, none through a relay, wherever it stands. Lower-power workings scale those crossing prices down. A relay is a reagent whose two columns read alike to the unit; one unit either way and it is something else, costing the ordinary crossing. The price is billed to the currency the next slot demanded first, so a supply pays its own way to the reagent waiting on it, and whatever is left is shared across everything else still in flight in proportion to what it carries, its unrounded share banked and carried to the next crossing rather than forgiven. A form may waive these prices or double them; see the seventh law.',
   },
   {
     title: 'The circle is walked once, then closed',
-    body: 'Slot I is lit first and fed last; slot VIII stands nearest the mouth, its surplus leaving across one slot. A lap costs sixteen, so what you set late is what you get, and what you set early must be large enough to survive the walk.',
+    body: 'Slot I is lit first and fed last; slot VIII stands nearest the mouth, its surplus leaving across one slot. At full power, a lap through ordinary reagents costs sixteen, so what you set late is what you get, and what you set early must be large enough to survive the walk.',
   },
   {
     title: 'An open slot is a hole in the circle',
@@ -127,11 +128,11 @@ export const LAWS: ReadonlyArray<{ title: string; body: string }> = [
   },
   {
     title: 'A reagent the ring underfeeds is paid for, or it gives less',
-    body: 'Every demand the ring cannot meet is settled one of two ways, and the form decides which. Under a volatile form (prayer, elegy, litany, invocation, dirge) the reagent reacts in full and the shortfall is drawn out of the caster. That toll is the only thing a casting ever costs the body, so a circle that feeds itself is free to speak at any size. A met elegy turns every three units beyond its first unavoidable wound into one extra unit of its existing manifestation, to a maximum of eight. Under a stable form (ward, benediction) a reagent hands back only the share of its yield the ring fed it, rounded down, and nothing is charged.',
+    body: 'Every demand the ring cannot meet is settled one of two ways, and the form decides which. Under a volatile form (prayer, elegy, litany, invocation, dirge) the reagent reacts in full and the shortfall is drawn out of the caster. That toll is the only thing a casting ever costs the body, so a circle that feeds itself is free to speak at any size. A met elegy turns that toll into more of the manifestation it already made, and grief comes cheaper the lesser the working: three units of toll buy one at full power, nine buy five at the first level. The effect stops at fifty units at full power and thirty at the first level. Under a stable form (ward, benediction) a reagent hands back only the share of its yield the ring fed it, rounded down, and nothing is charged.',
   },
   {
     title: 'A form asks one thing, and changes only what it names',
-    body: 'Every form but the prayer states one condition, printed with the rite. Meet it and the loss it names is cut — the crossings, the spill at the mouth, or both — by half or in full, depending on the form; fail it and that same loss doubles, to eight units across a gap and four across a reagent, or the share squared, or both together. A met elegy alone can draw a small, capped extra manifestation from its toll; every other form only moves where a loss falls and how much of it.',
+    body: 'Every form but the prayer states one condition, printed with the rite. Meet it and the loss it names is cut — the crossings, the spill at the mouth, or both — by half or in full, depending on the form; fail it and that same loss doubles, to eight units across a gap and four across a reagent at full power, or the share squared, or both together. Four forms carry one further clause apiece, and none carries more than one. A met elegy draws a capped extra manifestation from its toll, at a rate that eases as the level of the working falls. A met dirge keeps up to two non-sink reagents, one on either side of its fed sink. A met ward is given back half of what its first and last slots were fed, to eight units at full power and three at the first level. A met invocation gathers everything it delivers into its largest currency, losing a unit for each other currency it takes in. Every other form only moves where a loss falls and how much of it.',
   },
   {
     title: 'A working commands only some of a reagent',

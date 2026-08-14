@@ -1,5 +1,17 @@
 import { isRelay } from '../data/currencies'
-import { ELEGY_GRIEF, FORM_META, conditionFor, conditionRelief, type ConditionContext } from '../data/spellForms'
+import {
+  ELEGY_GRIEF,
+  dirgeKeptSlots,
+  FORM_META,
+  INVOCATION_FOLD,
+  WARD_DOOR,
+  conditionFor,
+  conditionRelief,
+  doorCeiling,
+  griefCeiling,
+  griefTollPerManifestation,
+  type ConditionContext,
+} from '../data/spellForms'
 import {
   LEVEL_POWER,
   RING_SLOT_COUNT,
@@ -17,6 +29,7 @@ import {
   type CasterSpecialty,
   type Currency,
   type Ledger,
+  type LossRelief,
   type MaterialComponent,
   type Placement,
   type SpellForm,
@@ -92,6 +105,11 @@ export interface Reaction {
    * `i` is a hole, a starved reagent or a sink, since those change what a slot
    * keeps but never what still travels past it. `SpellCircle` draws its flow
    * arcs from this.
+   *
+   * Every entry is the walk's own snapshot but for one case: current a
+   * measured slot I releases once the closing lap has repaid it is added to
+   * all eight, since it leaves slot I after the walk and rides the ring to
+   * the mouth without a slot left to take it.
    */
   carrying: Ledger[]
   /** Surplus that escaped the ring — what the spell actually does. */
@@ -106,6 +124,16 @@ export interface Reaction {
   manifestationTotal: number
   /** Extra manifestation a met elegy draws from toll beyond its first unavoidable wound. */
   griefBonusTotal: number
+  /** Extra manifestation a met ward is paid back for what its threshold slots were fed. */
+  wardBonusTotal: number
+  /** Non-sink slots a met dirge preserves when its reagents are consumed. */
+  keptSlots: number[]
+  /**
+   * Units a met invocation lost gathering its manifestation into one currency.
+   * Unlike the two bonuses this is not external current: the units moved to
+   * `bled`, so the first law needs no adjustment for it.
+   */
+  foldLossTotal: number
   tollTotal: number
   bledTotal: number
 }
@@ -145,9 +173,41 @@ function emptyReaction(form: SpellForm, specialty: CasterSpecialty | null): Reac
     bled: {},
     manifestationTotal: 0,
     griefBonusTotal: 0,
+    wardBonusTotal: 0,
+    keptSlots: [],
+    foldLossTotal: 0,
     tollTotal: 0,
     bledTotal: 0,
   }
+}
+
+/**
+ * Adds `bonus` units to a manifestation, following the mix it already has, by
+ * largest remainder so the total lands exactly on `bonus`.
+ *
+ * Shared by elegy's grief and the ward's doorway, which are the two clauses
+ * that make units the reagents did not release. Both distribute rather than
+ * name a currency, so neither can invent one the ring never raised, and both
+ * check the manifestation is non-empty first, so neither can make a cold ring
+ * speak.
+ */
+function spreadOverMix(manifestation: Ledger, bonus: number): void {
+  const total = ledgerTotal(manifestation)
+  if (bonus <= 0 || total <= 0) return
+
+  const shares = ledgerEntries(manifestation).map(([currency, amount]) => {
+    const exact = (amount * bonus) / total
+    return { currency, amount: Math.floor(exact), remainder: exact - Math.floor(exact) }
+  })
+
+  let assigned = shares.reduce((sum, share) => sum + share.amount, 0)
+  for (const share of [...shares].sort((a, b) => b.remainder - a.remainder)) {
+    if (assigned >= bonus) break
+    share.amount++
+    assigned++
+  }
+
+  for (const share of shares) addToLedger(manifestation, share.currency, share.amount)
 }
 
 /**
@@ -156,22 +216,44 @@ function emptyReaction(form: SpellForm, specialty: CasterSpecialty | null): Reac
  * prayer as a baseline (see `ConditionContext` in `data/spellForms.ts`), and
  * only on first use, since most forms' conditions never touch it.
  *
- * That baseline is resolved `pessimistic` (see `computeReaction`) rather than
- * at the nearest-unit rounding a real casting uses — see there for why: a
- * boolean gate reads a rounding coincidence very differently than a number
- * does, and this is the one place in the resolver that turns a rounded
- * amount into a boolean.
+ * The baseline uses the same nearest-unit rounding as the visible casting.
+ * A condition must not reject a current that the circle itself visibly
+ * delivers merely because its private probe rounded that current differently.
  */
-export function buildConditionContext(placements: Placement[], level: CasterLevel): ConditionContext {
+function conditionReliefForAssumption(
+  form: SpellForm,
+  placements: Placement[],
+  specialty: CasterSpecialty | null,
+  met: boolean,
+): { met: boolean | null; transit: LossRelief; spill: LossRelief } {
+  const condition = conditionFor(form, specialty)
+  if (!condition || placements.length === 0) {
+    return { met: null, transit: 'plain', spill: 'plain' }
+  }
+
+  const relief: LossRelief = met ? (condition.reward ?? 'spared') : 'doubled'
+  return {
+    met,
+    transit: condition.loss === 'transit' || condition.loss === 'both' ? relief : 'plain',
+    spill: condition.loss === 'spill' || condition.loss === 'both' ? relief : 'plain',
+  }
+}
+
+export function buildConditionContext(
+  placements: Placement[],
+  level: CasterLevel,
+  form: SpellForm = 'prayer',
+  specialty: CasterSpecialty | null = null,
+): ConditionContext {
   let baseline: Reaction | null = null
   return {
     fedUnderBaseline: (slotIndex: number) => {
-      if (!baseline) baseline = computeReaction(placements, 'prayer', level, true)
+      if (!baseline) baseline = resolveReaction(placements, form, level, specialty, true)
       const report = baseline.slots.find((s) => s.slotIndex === slotIndex)
       return report ? ledgerTotal(report.shortfall) === 0 : false
     },
     touchedUnderBaseline: (slotIndex: number) => {
-      if (!baseline) baseline = computeReaction(placements, 'prayer', level, true)
+      if (!baseline) baseline = resolveReaction(placements, form, level, specialty, true)
       const report = baseline.slots.find((s) => s.slotIndex === slotIndex)
       return report ? ledgerTotal(report.received) > 0 : false
     },
@@ -184,8 +266,9 @@ export function buildConditionContext(placements: Placement[], level: CasterLeve
  *
  * `form` decides two things: the underfed rule (credit vs measure, see
  * `FORM_META`) and which loss its condition spares or doubles (transit,
- * spill, or both). A met elegy then has one small, capped bonus drawn from
- * toll beyond its unavoidable first wound. See `data/spellForms.ts`.
+ * spill, or both). Four forms then carry one further clause apiece, settled
+ * at the end of the walk: elegy's grief, dirge's preservation, the ward's
+ * doorway, and invocation's fold into a single currency. See `data/spellForms.ts`.
  *
  * `level` belongs to the spell, not the caster. It scales every placed
  * reagent's demand and yield by `LEVEL_POWER[level]` before the walk reads
@@ -193,40 +276,40 @@ export function buildConditionContext(placements: Placement[], level: CasterLeve
  * curve. The completion spill does not move with level. See the eighth law
  * in `data/currencies.ts`.
  *
- * `pessimistic` is not a player-facing setting — no call site outside
- * `buildConditionContext`'s internal baseline probe should ever pass it.
- * `LEVEL_POWER`/`TRANSIT_POWER` round a demand, a yield and a transit cost
- * independently, and nearest-rounding several of them at once for the same
- * verdict lets a ring genuinely a fraction of a unit short of feeding a
- * reagent read fed at one level and starved at the next with no trend
- * between them — five numbers all moving the right direction, and a boolean
- * built from them that doesn't. Rounding a demand up and a yield or transit
- * cost down can only ever fail a ring the caster's true power hasn't reached
- * yet, never pass one by luck, so a verdict built this way only moves one
- * way as level rises. Left `false` (nearest, as before) `computeReaction`
- * reproduces the exact, extensively-tuned numbers in CLAUDE.md's Balance
- * section; flipped on for a whole ring rather than one reagent's supply
- * chain the compounding rounding is heavy enough to read as a real balance
- * cut — a fed eight-reagent ring at level 1 goes from ~1% dead to 100% —
- * which is why it stays off the path every real casting takes.
  */
 export function computeReaction(
+ placements: Placement[],
+ form: SpellForm,
+ level: CasterLevel = 5,
+  // Kept in this position for existing callers; rounding is now always the
+  // visible nearest-unit rule, including the condition baseline.
+  _pessimistic = false,
+  specialty: CasterSpecialty | null = null,
+): Reaction {
+  void _pessimistic
+  return resolveReaction(placements, form, level, specialty)
+}
+
+/** Resolves a ring, optionally assuming its condition holds for a contextual condition check. */
+function resolveReaction(
   placements: Placement[],
   form: SpellForm,
-  level: CasterLevel = 5,
-  pessimistic = false,
-  specialty: CasterSpecialty | null = null,
+  level: CasterLevel,
+  specialty: CasterSpecialty | null,
+  assumedConditionMet: boolean | null = null,
 ): Reaction {
   if (placements.length === 0) return emptyReaction(form, specialty)
 
   const { underfed } = FORM_META[form]
-  const relief = conditionRelief(form, placements, buildConditionContext(placements, level), specialty)
+  const conditionContext = buildConditionContext(placements, level, form, specialty)
+  const relief =
+    assumedConditionMet === null
+      ? conditionRelief(form, placements, conditionContext, specialty)
+      : conditionReliefForAssumption(form, placements, specialty, assumedConditionMet)
   const metTransit = relief.met ? conditionFor(form, specialty)?.metTransit : undefined
   const transitFactor = transitScale(relief.transit)
-  const demandForCaster = (ledger: Ledger): Ledger =>
-    scaleLedger(ledger, level, pessimistic ? Math.ceil : Math.round)
-  const yieldForCaster = (ledger: Ledger): Ledger =>
-    scaleLedger(ledger, level, pessimistic ? Math.floor : Math.round)
+  const demandForCaster = (ledger: Ledger): Ledger => scaleLedger(ledger, level, Math.round)
+  const yieldForCaster = (ledger: Ledger): Ledger => scaleLedger(ledger, level, Math.round)
 
   const byIndex = new Map(placements.map((p) => [p.slotIndex, p.component]))
   /** Demands as this caster can command them, keyed by slot. The walk asks for
@@ -253,27 +336,31 @@ export function computeReaction(
   // 0.55 and 2 * 0.7 both round to 1 on their own). One carry serves both
   // reagent and gap crossings since gap cost is exactly double reagent cost.
   //
-  // `pessimistic` rounds a crossing's cost up rather than to the nearest
-  // unit — see `computeReaction`'s doc comment. Only the internal baseline
-  // probe sets it; a real casting still rounds to nearest here exactly as
-  // before.
   let transitCarry = 0
 
+  /**
+   * The catalog-scale price of crossing into this slot, before level and the
+   * form's own scaling. A met condition may state its own pair of prices
+   * (`FormCondition.metTransit`) in place of the standing ones.
+   *
+   * **A relay crosses free on every path, a stated pair included.** Law 2 says
+   * "none through a relay, wherever it stands", and a stated cost is still a
+   * crossing price rather than an exemption from the one rule the resolver
+   * asks a component about. This was invisible while the only `metTransit`
+   * set `reagent: 0`; it is not now that one charges for a reagent crossing.
+   */
+  function statedTransitCost(occupant: MaterialComponent | undefined): number {
+    if (occupant && isRelay(occupant)) return TRANSIT_LOSS_RELAY
+    if (metTransit) return occupant ? metTransit.reagent : metTransit.gap
+    return occupant ? TRANSIT_LOSS_REAGENT : TRANSIT_LOSS_GAP
+  }
+
   function baseTransitCost(slotIndex: number): number {
-    const occupant = byIndex.get(slotIndex)
-    const stated = metTransit
-      ? !occupant
-        ? metTransit.gap
-        : metTransit.reagent
-      : !occupant
-        ? TRANSIT_LOSS_GAP
-        : isRelay(occupant)
-          ? TRANSIT_LOSS_RELAY
-          : TRANSIT_LOSS_REAGENT
+    const stated = statedTransitCost(byIndex.get(slotIndex))
     const exact = stated * TRANSIT_POWER[level] * (metTransit ? 1 : transitFactor)
     if (exact <= 0) return 0
     const owed = exact + transitCarry
-    const charged = Math.max(0, (pessimistic ? Math.ceil : Math.round)(owed))
+    const charged = Math.max(0, Math.round(owed))
     transitCarry = owed - charged
     return charged
   }
@@ -519,6 +606,19 @@ export function computeReaction(
       }
       release(first, extra)
       if (fed >= deferred.wanted) first.measured = false
+
+      // That release lands after the last `carrying` snapshot was taken, so
+      // without this slot I reads on the circle as a reagent whose yield
+      // vanished: the panel says it released, and no arc carries any of it.
+      // Nothing round the ring can take it — every slot has already resolved,
+      // and law 5 asks each one only once — so it rides the whole lap
+      // untouched to the mouth, paying no crossing on the way because every
+      // crossing is already behind it. Add it to each stretch it passes,
+      // slot I's own included, since it has left slot I by then.
+      for (const [currency, amount] of ledgerEntries(extra)) {
+        if (amount <= 0) continue
+        for (const ledger of carrying) addToLedger(ledger, currency, amount)
+      }
     }
   }
 
@@ -574,28 +674,76 @@ export function computeReaction(
    * Toll beyond that wound strengthens the manifestation a little, then stops:
    * the effect is distributed over what the ring already made so it never
    * invents a new currency or makes a cold ring speak.
+   *
+   * The rate runs against level (`GRIEF_POWER`) where the floor and the ceiling
+   * run with it (`LEVEL_POWER`, `griefCeiling`): a lesser working reads a
+   * smaller wound and buys past it more cheaply, up to a lower ceiling.
    */
   let griefBonusTotal = 0
   if (form === 'elegy' && relief.met && ledgerTotal(manifestation) > 0) {
     const floor = Math.round(ELEGY_GRIEF.baseToll * LEVEL_POWER[level])
     griefBonusTotal = Math.min(
-      ELEGY_GRIEF.maximumManifestation,
-      Math.floor(Math.max(0, ledgerTotal(toll) - floor) / ELEGY_GRIEF.tollPerManifestation),
+      griefCeiling(level),
+      Math.floor(Math.max(0, ledgerTotal(toll) - floor) / griefTollPerManifestation(level)),
     )
+    spreadOverMix(manifestation, griefBonusTotal)
+  }
 
-    if (griefBonusTotal > 0) {
-      const total = ledgerTotal(manifestation)
-      const shares = ledgerEntries(manifestation).map(([currency, amount]) => {
-        const exact = (amount * griefBonusTotal) / total
-        return { currency, amount: Math.floor(exact), remainder: exact - Math.floor(exact) }
-      })
-      let assignedBonus = shares.reduce((sum, share) => sum + share.amount, 0)
-      for (const share of [...shares].sort((a, b) => b.remainder - a.remainder)) {
-        if (assignedBonus >= griefBonusTotal) break
-        share.amount++
-        assignedBonus++
+  /**
+   * A met ward is paid back for its doorway: half of what slots I and VIII
+   * were given comes back, to `doorCeiling`. Read off `received`, which by
+   * this point includes what the closing lap repaid slot I, so the clause
+   * asks for a chain that came all the way round rather than for a large
+   * reagent parked at the door. See `WARD_DOOR`.
+   */
+  let wardBonusTotal = 0
+  if (form === 'ward' && relief.met && ledgerTotal(manifestation) > 0) {
+    const given = [0, RING_SLOT_COUNT - 1].reduce((sum, slotIndex) => {
+      const report = reports.get(slotIndex)
+      return sum + (report ? ledgerTotal(report.received) : 0)
+    }, 0)
+    wardBonusTotal = Math.min(
+      doorCeiling(level),
+      Math.floor(given / WARD_DOOR.receivedPerManifestation),
+    )
+    spreadOverMix(manifestation, wardBonusTotal)
+  }
+
+  // A dirge does not change what the ring releases. Once its sink has earned
+  // the rite's relief, though, the nearest non-sinks on either side of its
+  // fully fed sink are left intact. Keeping this on the reaction lets the future
+  // casting write consume exactly the same deterministic slots the circle previews.
+  const keptSlots =
+    form === 'dirge' && relief.met && assumedConditionMet === null
+      ? dirgeKeptSlots(placements, conditionContext)
+      : []
+
+  /**
+   * A met invocation answers in one currency: everything it delivers is
+   * gathered into its largest share, and a unit is lost for each currency
+   * taken in. The lost units go to `bled` rather than vanishing, so this
+   * clause alone needs no accounting on the reaction. See `INVOCATION_FOLD`.
+   */
+  let foldLossTotal = 0
+  if (form === 'invocation' && relief.met) {
+    const entries = ledgerEntries(manifestation)
+    if (entries.length > 1) {
+      // The name is the largest share. `ledgerEntries` walks CURRENCIES order
+      // and the comparison is strict, so a tie settles on the first of them
+      // and a given ring always folds the same way.
+      let name = entries[0][0]
+      for (const [currency, amount] of entries) {
+        if (amount > (manifestation[name] ?? 0)) name = currency
       }
-      for (const share of shares) addToLedger(manifestation, share.currency, share.amount)
+
+      for (const [currency, amount] of entries) {
+        if (currency === name) continue
+        const lost = Math.min(amount, INVOCATION_FOLD.lostPerCurrency)
+        delete manifestation[currency]
+        addToLedger(manifestation, name, amount - lost)
+        addToLedger(bled, currency, lost)
+        foldLossTotal += lost
+      }
     }
   }
 
@@ -612,6 +760,9 @@ export function computeReaction(
     bled,
     manifestationTotal: ledgerTotal(manifestation),
     griefBonusTotal,
+    wardBonusTotal,
+    keptSlots,
+    foldLossTotal,
     tollTotal: ledgerTotal(toll),
     bledTotal: ledgerTotal(bled),
   }

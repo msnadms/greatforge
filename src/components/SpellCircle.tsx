@@ -194,21 +194,47 @@ function buildFlowArc(from: number, to: number, carrying: Ledger[]): FlowArc {
 }
 
 /**
- * The closing lap: whatever is still leaving slot VIII crosses the mouth to
- * feed slot I before any of it manifests (`repay`, in the resolver). Drawn
- * only when that crossing actually delivers something to slot I — otherwise
- * what survives the mouth goes straight to the manifestation fan instead.
+ * The closing lap: whatever is still leaving slot VIII crosses the mouth into
+ * slot I before any of it manifests (`repay`, in the resolver).
+ *
+ * **Drawn only where a reagent stands at slot I**, with anything still leaving
+ * slot VIII to reach it. It used to be drawn only where the crossing actually
+ * repaid slot I, which is a narrower test than occupancy and missed the
+ * commonest shape there is: a source at slot I demands nothing, so it is never
+ * repaid, and the ring visibly failed to close on a reagent plainly standing
+ * in it. Occupancy is the right question. A source is arrived at like anything
+ * else, and the line carries on into the run leaving slot I.
+ *
+ * An empty slot I gets no arc, because there is nothing there to arrive at.
+ * Two other endings were tried and are worse: running it to the slot draws a
+ * line into an empty socket that stops dead in it, and stopping it half a slot
+ * short at the mouth ends the line at a point nothing marks as a destination.
+ * What leaves an open ring is already drawn — the manifestation fan, which
+ * departs from slot VIII along this same radius.
+ *
+ * It ends on whatever is leaving slot I, the same rule every other arc's end
+ * follows, so the colour carries through the junction into the run that
+ * starts there. Ending it on what slot I *took* instead put a hard edge at
+ * that one point — the mouth arc arrived in the colour of the demand it paid
+ * (mass) while the run leaving slot I began in the colour of the yield it
+ * released (heat), and slot I is the only junction where the two sides were
+ * read off different quantities. Where nothing leaves slot I the current
+ * ends there, so the arc closes on what changed hands, or failing that on
+ * the colour it arrived in.
  */
-function buildMouthArc(carrying: Ledger[], firstReceived: Ledger): FlowArc | null {
-  if (ledgerTotal(firstReceived) <= 0) return null
+function buildMouthArc(carrying: Ledger[], first: SlotReport | null): FlowArc | null {
+  if (!first) return null
   const mouth = RING_SLOT_COUNT - 1
   const startHue = carryingHue(carrying, mouth)
   if (startHue === null) return null
-  const endCurrency = dominantCurrency(firstReceived)
-  const endHue = endCurrency ? currencyHue(endCurrency) : startHue
+  const leavingFirst = carryingHue(carrying, 0)
+  const received = dominantCurrency(first.received)
+  const endHue = leavingFirst ?? (received ? currencyHue(received) : startHue)
 
   const { path, start, end } = arcPath(mouth, RING_SLOT_COUNT, FLOW_RADIUS)
-  const title = ledgerEntries(firstReceived)
+  // What crosses, as on every other arc, rather than what slot I took out of
+  // it: the slot's own card already states what it received.
+  const title = ledgerEntries(carrying[mouth] ?? {})
     .map(([currency, amount]) => `${CURRENCY_META[currency].label} ${amount}`)
     .join(', ')
 
@@ -233,7 +259,7 @@ function buildMouthArc(carrying: Ledger[], firstReceived: Ledger): FlowArc | nul
  * at the next source further round, so the line breaks there. The closing lap
  * (`buildMouthArc`) is always its own arc, never part of one of these runs.
  */
-function buildFlowArcs(carrying: Ledger[], firstReceived: Ledger): FlowArc[] {
+function buildFlowArcs(carrying: Ledger[], first: SlotReport | null): FlowArc[] {
   const arcs: FlowArc[] = []
   let start: number | null = null
   for (let segment = 0; segment < RING_SLOT_COUNT - 1; segment++) {
@@ -246,7 +272,7 @@ function buildFlowArcs(carrying: Ledger[], firstReceived: Ledger): FlowArc[] {
   }
   if (start !== null) arcs.push(buildFlowArc(start, RING_SLOT_COUNT - 1, carrying))
 
-  const mouthArc = buildMouthArc(carrying, firstReceived)
+  const mouthArc = buildMouthArc(carrying, first)
   if (mouthArc) arcs.push(mouthArc)
 
   return arcs
@@ -371,7 +397,7 @@ export function SpellCircle({ children }: { children: ReactNode }) {
   /** The ring drawn as however many unbroken stretches still carry current,
    * plus the closing crossing over the mouth. See `buildFlowArcs`. */
   const flows = useMemo<FlowArc[]>(
-    () => buildFlowArcs(reaction.carrying, reports.get(0)?.received ?? {}),
+    () => buildFlowArcs(reaction.carrying, reports.get(0) ?? null),
     [reaction.carrying, reports],
   )
 
@@ -520,6 +546,7 @@ export function SpellCircle({ children }: { children: ReactNode }) {
             armedComponentId={armedComponentId}
             report={reports.get(index) ?? null}
             named={named.has(index)}
+            kept={reaction.keptSlots.includes(index)}
             readOnly={mode === 'view'}
             style={style}
             onPlace={placeComponent}

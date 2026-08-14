@@ -9,6 +9,7 @@ import { buildSeedComponents } from '../src/data/seedComponents'
 import { computeReaction } from '../src/lib/reaction'
 import { describeRole } from '../src/data/currencies'
 import { formsForSpecialty } from '../src/data/casterSpecialties'
+import { NEAR_OPTIMAL_RINGS } from './nearOptimalRings'
 import {
   CASTER_SPECIALTIES,
   CASTER_LEVELS,
@@ -153,7 +154,13 @@ function climb(run: FormRun, level: CasterLevel): Eval & { ring: Placement[] } {
     ring.push({ slotIndex, component })
   }
 
-  let current = ring
+  return ascend(ring, run, level)
+}
+
+/** Steepest ascent from a given ring. `climb` starts one at random; `JOBS`
+ * also starts one from each previously recorded ring (see `priorRings`). */
+function ascend(start: Placement[], run: FormRun, level: CasterLevel): Eval & { ring: Placement[] } {
+  let current = start
   let value = score(current, run, level)
 
   for (;;) {
@@ -227,13 +234,51 @@ const results = new Map<string, Found[]>()
 const jobKey = ({ form, specialty }: FormRun, level: CasterLevel): string =>
   `${specialty ?? 'legacy'}:${form}:${level}`
 
+/**
+ * The rings this file recorded last time, as starting points for this run's
+ * climbs, so **a regeneration can never come out worse than the one before
+ * it.** Steepest ascent from a recorded ring either stays put or improves on
+ * it, and the random restarts still explore everywhere else.
+ *
+ * Without this the recorded frontier can go backwards when a form's rules
+ * change: 250 random starts is thin cover for eight slots over the whole
+ * catalog, and a changed objective sends the same starts to different local
+ * optima. The ward's doorway (`WARD_DOOR`) is what caught it — its stored
+ * rings scored 54 under the new rules where a fresh climb topped out at 47,
+ * so overwriting them would have understated the change that had just been
+ * made. Reading the module this generator writes is deliberate, not a cycle:
+ * each run stands on the last one.
+ */
+function priorRings(run: FormRun, level: CasterLevel): Placement[][] {
+  const byName = new Map(CATALOG.map((c) => [c.name, c]))
+  return NEAR_OPTIMAL_RINGS.filter(
+    (stored) =>
+      stored.form === run.form &&
+      (stored.specialty ?? null) === (run.specialty ?? null) &&
+      stored.level === level,
+  )
+    .map((stored) => ({
+      wanted: stored.placements.length,
+      ring: stored.placements.flatMap((p) => {
+        const component = byName.get(p.component)
+        return component ? [{ slotIndex: p.slotIndex, component }] : []
+      }),
+    }))
+    // A ring naming a reagent this catalog no longer stocks is dropped whole
+    // rather than climbed from with a hole where that reagent stood.
+    .filter(({ wanted, ring }) => ring.length === wanted && ring.length > 0)
+    .map(({ ring }) => ring)
+}
+
 for (const run of JOBS) {
   const { level } = run
   state = 0xf00d0000 + JOBS.indexOf(run) * 0x1000
   const seen = new Map<string, Found>()
   const net = isNetForm(run.form)
-  for (let i = 0; i < RESTARTS_PER_FORM; i++) {
-    const { manifestation, toll, feasible, ring } = climb(run, level)
+  const starts = priorRings(run, level)
+  for (let i = 0; i < RESTARTS_PER_FORM + starts.length; i++) {
+    const { manifestation, toll, feasible, ring } =
+      i < starts.length ? ascend(starts[i], run, level) : climb(run, level)
     // A capped-form climb that never found its way under the cap has
     // nothing this report wants — the whole point is the best ring
     // *within* the cap. A net-form climb has no cap to fail.

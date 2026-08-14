@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { useState } from 'react'
 import { CURRENCY_META, describeLedger } from '../data/currencies'
-import { FORM_META, UNDERFED_RULE, formLabelFor } from '../data/spellForms'
+import { FORM_META, UNDERFED_RULE, articleFor, formLabelFor } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, type SpellForm } from '../types/worldbuilding'
@@ -74,22 +74,36 @@ function hemisphereLayout(center: number, count: number): { path: string; offset
   return { path, offsets }
 }
 
+/** The book's unwritten text keeps only the consequence, not its currency heading. */
+function consequenceAfterColon(description: string): string {
+  const colon = description.indexOf(':')
+  const consequence = (colon === -1 ? description : description.slice(colon + 1)).trim()
+  return `${consequence[0]?.toUpperCase() ?? ''}${consequence.slice(1)}`
+}
+
 /** An inscribed working, read rather than edited. No field carries its name here. */
 function BookView() {
-  const { draft, editDraft, reaction } = useWorkshop()
-  const form = FORM_META[draft.form]
+  const { draft, reaction } = useWorkshop()
   const formLabel = formLabelFor(draft.form, draft.specialty)
   const manifestEntries = ledgerEntries(reaction.manifestation).sort((a, b) => b[1] - a[1])
   const tollEntries = ledgerEntries(reaction.toll).sort((a, b) => b[1] - a[1])
   const manifestLayout = hemisphereLayout(-90, manifestEntries.length)
   const tollLayout = hemisphereLayout(90, tollEntries.length)
+  const unwrittenText = [
+    ...manifestEntries.map(([currency, amount]) => ({ amount, description: CURRENCY_META[currency].vent })),
+    ...tollEntries.map(([currency, amount]) => ({ amount, description: CURRENCY_META[currency].toll })),
+  ]
+    .sort((a, b) => b.amount - a.amount)
+    .map(({ description }) => consequenceAfterColon(description))
+    .join('\n\n')
 
   return (
     <div className="book book--view">
       <div className="book__page book__page--left">
         <h2 className="book__viewTitle">{draft.title || 'Untitled rite'}</h2>
         <p className="book__viewForm">
-          {form.article === 'an' ? 'An' : 'A'} {formLabel.toLowerCase()}, worked at scale{' '}
+          {articleFor(draft.form, draft.specialty) === 'an' ? 'An' : 'A'}{' '}
+          {formLabel.toLowerCase()}, worked at scale{' '}
           {draft.casterLevel}.
         </p>
         {manifestEntries.length > 0 || tollEntries.length > 0 ? (
@@ -134,22 +148,18 @@ function BookView() {
       <div className="book__page book__page--right">
         {draft.text ? (
           <p className="book__viewText">{draft.text}</p>
+        ) : unwrittenText ? (
+          <p className="book__viewText book__viewText--generated">{unwrittenText}</p>
         ) : (
           <p className="book__viewText book__viewText--none">No words were written for this one.</p>
         )}
-
-        <div className="book__actions book__actions--end">
-          <button type="button" className="btn btn--primary" onClick={editDraft}>
-            Edit
-          </button>
-        </div>
       </div>
     </div>
   )
 }
 
 function BookEditor() {
-  const { allowedForms, draft, updateDraft, saveDraft, reaction } = useWorkshop()
+  const { allowedForms, draft, updateDraft, reaction } = useWorkshop()
   const [expanded, setExpanded] = useState<boolean>(false)
 
   return (
@@ -229,12 +239,6 @@ function BookEditor() {
             onChange={(event) => updateDraft({ text: event.target.value })}
           />
         </label>
-
-        <div className="book__actions">
-          <button type="button" className="btn btn--primary" onClick={() => void saveDraft()}>
-            Inscribe
-          </button>
-        </div>
       </div>
     </div>
   )

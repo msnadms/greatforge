@@ -208,9 +208,16 @@
 .workshop__stage {
   grid-area: stage;
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   place-items: center;
-  padding: 24px;
+  padding: 16px 24px 24px 16px;
   overflow: auto;
+}
+
+.stage__actions {
+  justify-self: start;
+  display: flex;
+  gap: 8px;
 }
 
 /* ----------------------------------------------------------------- panels */
@@ -235,6 +242,8 @@
 
 .circle {
   position: relative;
+  grid-row: 2;
+  align-self: center;
   /* Slots overhang the box, so the stage keeps padding around it. */
   width: min(100%, 74vh, 820px);
   aspect-ratio: 1;
@@ -446,6 +455,16 @@
   box-shadow:
     /* Pulled back to sit with the muted currency glows; still the loudest of them. */
     0 0 18px -4px hsl(0 45% 50% / 0.45),
+    var(--shadow);
+}
+
+/* A met dirge preserves these reagents. The gold sits outside the card's own
+   hue so preservation reads as a form effect, not a property of the material. */
+.slot--kept {
+  border-color: var(--gilt);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--gilt) 52%, transparent),
+    0 0 32px 4px color-mix(in srgb, var(--gilt) 58%, transparent),
     var(--shadow);
 }
 
@@ -708,18 +727,6 @@
   text-transform: none;
 }
 
-.book__actions {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 8px;
-}
-
-/* View mode has no save state to report, so Edit sits alone at the right. */
-.book__actions--end {
-  justify-content: flex-end;
-}
-
 .book__status {
   font-size: 11px;
   letter-spacing: 1px;
@@ -807,6 +814,12 @@
 
 .book__viewText--none {
   font-family: inherit;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--rune);
+}
+
+.book__viewText--generated {
   font-size: 12px;
   font-style: italic;
   color: var(--rune);
@@ -1329,56 +1342,146 @@
 
 /* -------------------------------------------------------------------- spells */
 
+.spells__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.spells__groupHead {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 2px 0;
+  border: 0;
+  border-bottom: 1px solid var(--border);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.spells__groupName {
+  flex: 1 1 auto;
+  font-family: var(--heading);
+  font-size: 12px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  color: var(--text-h);
+}
+
+.spells__groupCount,
+.spells__groupFold {
+  font-size: 11px;
+  color: var(--rune);
+}
+
 .spells__list {
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
 }
 
+/* An entry is its own circle, sized by the column it stands in. */
 .spells__item {
-  display: flex;
-  align-items: stretch;
-  gap: 4px;
+  position: relative;
 }
 
 .spells__open {
-  flex: 1 1 auto;
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+}
+
+.spells__band {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  /* The engraved band rides near the edge of the box; a tall glyph passes it. */
+  overflow: visible;
+}
+
+.spells__disc {
+  fill: var(--panel);
+  stroke: var(--border);
+  stroke-width: 0.8;
+}
+
+.spells__item--active .spells__disc {
+  fill: var(--accent-bg);
+  stroke: var(--accent);
+}
+
+.spells__open:hover .spells__disc {
+  stroke: var(--border-strong);
+}
+
+/*
+ * The title, engraved along the band outside the disc. Sized in the box's units,
+ * not pixels, so it scales with the circle.
+ */
+.spells__engraved {
+  fill: var(--text-h);
+  font-family: var(--heading);
+  font-size: 15px;
+  letter-spacing: 0.1px;
+  text-anchor: middle;
+}
+
+/*
+ * Shrink-wrapped around the two figures so the rule between them is as wide as
+ * the wider number and no wider.
+ */
+.spells__figures {
+  position: relative;
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 2px;
-  padding: 7px 9px;
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  background: var(--panel);
-  cursor: pointer;
-  text-align: left;
-  min-width: 0;
+  align-items: stretch;
+  gap: 3px;
+  width: fit-content;
 }
 
-.spells__item--active .spells__open {
-  border-color: var(--accent);
-  background: var(--accent-bg);
-}
-
-.spells__title {
+.spells__figure {
   font-family: var(--heading);
-  font-size: 14px;
-  color: var(--text-h);
+  font-size: 16px;
+  line-height: 1;
+  text-align: center;
 }
 
-.spells__meta {
-  font-size: 11px;
-  letter-spacing: 0.5px;
-  color: var(--rune);
+.spells__figure--manifest {
+  color: var(--gilt);
 }
 
-/* Capitalizes the form name only, not the component count that follows it. */
-.spells__meta::first-letter {
-  text-transform: uppercase;
+.spells__figure--toll {
+  color: var(--danger);
+}
+
+.spells__rule {
+  height: 1px;
+  background: var(--border-strong);
+}
+
+/* Rides the rim rather than taking a column beside the circle. */
+.spells__strike {
+  position: absolute;
+  top: 6px;
+  right: 0;
+  opacity: 0;
+}
+
+.spells__item:hover .spells__strike,
+.spells__strike:focus-visible {
+  opacity: 1;
 }
 
 /* -------------------------------------------------------------------- chips */

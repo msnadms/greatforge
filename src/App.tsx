@@ -14,6 +14,24 @@ import { useWorkshop } from './state/useWorkshop'
 import { WorkshopProvider } from './state/WorkshopProvider'
 import './App.css'
 
+function SpellActions() {
+  const { mode, editDraft, saveDraft } = useWorkshop()
+
+  return (
+    <div className="stage__actions">
+      {mode === 'view' ? (
+        <button type="button" className="btn btn--small btn--primary" onClick={editDraft}>
+          Edit
+        </button>
+      ) : (
+        <button type="button" className="btn btn--small btn--primary" onClick={() => void saveDraft()}>
+          Inscribe
+        </button>
+      )}
+    </div>
+  )
+}
+
 function Workshop() {
   const { loading } = useWorkshop()
 
@@ -35,6 +53,7 @@ function Workshop() {
         </aside>
 
         <main className="workshop__stage">
+          <SpellActions />
           <SpellCircle>
             <Spellbook />
           </SpellCircle>

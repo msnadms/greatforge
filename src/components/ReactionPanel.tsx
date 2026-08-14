@@ -6,6 +6,7 @@ import {
   UNDERFED_RULE,
   conditionCostRule,
   conditionFor,
+  articleFor,
   formLabelFor,
 } from '../data/spellForms'
 import type { SlotReport } from '../lib/reaction'
@@ -79,6 +80,14 @@ export function ReactionPanel() {
   // Under a measuring form, slots that gave back less than their yield instead
   // of billing the caster — a zero toll must not read as a ring that fed itself.
   const stintedSlots = reaction.slots.filter((slot) => slot.measured)
+  const keptSlots = reaction.slots.filter((slot) => reaction.keptSlots.includes(slot.slotIndex))
+  // A met invocation leaves exactly one currency standing, so the manifestation
+  // itself names what it folded into rather than the reaction carrying a field
+  // for it.
+  const foldedInto =
+    reaction.foldLossTotal > 0
+      ? (CURRENCY_META[ledgerEntries(reaction.manifestation)[0]?.[0]]?.label.toLowerCase() ?? 'one currency')
+      : null
   const verdict =
     reaction.conditionMet === null ? 'cold' : reaction.conditionMet ? 'met' : 'unmet'
 
@@ -103,7 +112,7 @@ export function ReactionPanel() {
               the ring as placed and changes as reagents move. */}
           <div className="reaction__form">
             <p className="reaction__formLine">
-              Spoken as {form.article}{' '}
+              Spoken as {articleFor(reaction.form, reaction.specialty)}{' '}
               <strong title={form.gloss}>{formLabel.toLowerCase()}</strong>.{' '}
               <span className="reaction__formTag" title={UNDERFED_RULE[form.underfed]}>
                 {UNDERFED_LABEL[form.underfed]}
@@ -145,7 +154,23 @@ export function ReactionPanel() {
                     <LedgerReadout ledger={reaction.manifestation} describe="vent" />
                     {reaction.griefBonusTotal > 0 ? (
                       <p className="reaction__short">
-                        Grief made {reaction.griefBonusTotal} more manifestation out of the toll beyond the first wound.
+                        Grief made {reaction.griefBonusTotal} more manifestation out of the toll.
+                      </p>
+                    ) : null}
+                    {reaction.wardBonusTotal > 0 ? (
+                      <p className="reaction__short">
+                        The threshold gave back {reaction.wardBonusTotal} of what slots I and VIII were fed.
+                      </p>
+                    ) : null}
+                    {keptSlots.length > 0 ? (
+                      <p className="reaction__short">
+                        The dirge keeps <SlotRun slots={keptSlots} />. It preserves the nearest non-sinks on either side of its fed sink.
+                      </p>
+                    ) : null}
+                    {reaction.foldLossTotal > 0 ? (
+                      <p className="reaction__short">
+                        The name gathered everything into {foldedInto}. {reaction.foldLossTotal}{' '}
+                        {reaction.foldLossTotal === 1 ? 'unit' : 'units'} did not fit.
                       </p>
                     ) : null}
                   </>

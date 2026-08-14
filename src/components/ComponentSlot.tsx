@@ -16,6 +16,8 @@ interface ComponentSlotProps {
   report: SlotReport | null
   /** This slot is one the spoken form's melody speaks about. */
   named?: boolean
+  /** This reagent will be preserved when a met dirge is cast. */
+  kept?: boolean
   /** Viewing an inscribed working: the slot is a diagram, not a control. */
   readOnly?: boolean
   style: CSSProperties
@@ -29,6 +31,7 @@ export function ComponentSlot({
   armedComponentId,
   report,
   named = false,
+  kept = false,
   readOnly = false,
   style,
   onPlace,
@@ -69,6 +72,7 @@ export function ComponentSlot({
     armed && !component ? 'slot--armed' : '',
     starved ? 'slot--starved' : '',
     named ? 'slot--named' : '',
+    kept ? 'slot--kept' : '',
     readOnly ? 'slot--readOnly' : '',
   ]
     .filter(Boolean)
@@ -84,13 +88,14 @@ export function ComponentSlot({
   const where = `Slot ${index + 1}${standing}.`
   const toll = starved ? ` Starved by ${ledgerTotal(shortfall)}. ${starvation}` : ''
   const asked = named ? " Named by the form's melody." : ''
+  const preserved = kept ? ' Kept by the dirge; it will not be consumed.' : ''
   const label = readOnly
-    ? `${where}${toll}${asked}`
+    ? `${where}${toll}${asked}${preserved}`
     : armed
-      ? `${where}${toll}${asked} Activate to place the selected component here.`
+      ? `${where}${toll}${asked}${preserved} Activate to place the selected component here.`
       : component
-        ? `${where}${toll}${asked} Activate to empty this slot.`
-        : `${where}${asked} Select a component first, or drag one here.`
+        ? `${where}${toll}${asked}${preserved} Activate to empty this slot.`
+        : `${where}${asked}${preserved} Select a component first, or drag one here.`
 
   const inside = (
     <>

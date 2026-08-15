@@ -17,9 +17,9 @@
      colour. `--gem-s` for strokes/borders/text, `--gem-s-strong` for fills/glows. */
   --gem-s: 30%;
   --gem-s-strong: 40%;
-  --accent: #7b3fbf;
-  --accent-bg: rgba(123, 63, 191, 0.12);
-  --accent-border: rgba(123, 63, 191, 0.55);
+  --accent: #9c6b12;
+  --accent-bg: rgba(156, 107, 18, 0.12);
+  --accent-border: rgba(156, 107, 18, 0.55);
   --danger: #9b2c2c;
   /* Slots a form's condition names. Never red — that means unmet demand, not this. */
   --named: #9a6f1f;
@@ -61,9 +61,9 @@
     /* Muted hues go grey against a dark ground sooner, so a few points more. */
     --gem-s: 36%;
     --gem-s-strong: 46%;
-    --accent: #c084fc;
-    --accent-bg: rgba(192, 132, 252, 0.16);
-    --accent-border: rgba(192, 132, 252, 0.5);
+    --accent: #d9a441;
+    --accent-bg: rgba(217, 164, 65, 0.16);
+    --accent-border: rgba(217, 164, 65, 0.5);
     --danger: #e07070;
     /* A heavier wash — 14% is nearly invisible over a dark panel. */
     --named: #d8a94a;

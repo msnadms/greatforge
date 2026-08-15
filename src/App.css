@@ -1246,10 +1246,10 @@
   gap: 8px;
 }
 
-/* Two columns of the compact card below; the rail around it already scrolls. */
+/* Three columns of the compact card below; the rail around it already scrolls. */
 .tray__list--grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
 .tray__item {
@@ -1289,7 +1289,10 @@
 /*
  * The alternate codex view: the same card a filled, editable slot on the
  * circle draws (`.slot--filled`), minus the fixed width and absolute
- * positioning a ring slot needs and this grid item doesn't.
+ * positioning a ring slot needs and this grid item doesn't. It also drops the
+ * hue wash the circle paints on: a lit card means a reagent standing in a
+ * slot, and nothing in the codex is standing anywhere. The hue stays in the
+ * border and the glow, which is enough to read the currency by.
  */
 .tray__item--card {
   border: 1px solid hsl(var(--slot-hue, 40) var(--gem-s) 55% / 0.9);
@@ -1297,16 +1300,21 @@
   box-shadow:
     0 0 18px -4px hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.5),
     var(--shadow);
-  background:
-    linear-gradient(
-      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.14),
-      hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.05)
-    ),
-    var(--panel);
-  min-height: 62px;
+  background: hsl(var(--slot-hue, 40) var(--gem-s-strong) 90% / 0.5);
+  /* Square, so three of them tile the rail evenly whatever the name's length. */
+  aspect-ratio: 1;
+  padding: 6px;
   align-items: center;
   justify-content: center;
   text-align: center;
+  overflow: hidden;
+}
+
+/* A third of the rail is narrower than several catalog names, which have no
+   space to break at. Let them break anywhere rather than run past the edge. */
+.tray__item--card .slot__name {
+  font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 /*
@@ -1440,7 +1448,8 @@
 }
 
 .spells__disc {
-  fill: var(--panel);
+  /* The rail sets no background of its own, so this is the rail's own ground. */
+  fill: var(--bg);
   stroke: var(--border);
   stroke-width: 0.8;
 }

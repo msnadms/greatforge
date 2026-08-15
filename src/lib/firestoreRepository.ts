@@ -12,7 +12,7 @@ import {
   type QueryDocumentSnapshot,
 } from 'firebase/firestore'
 import { isInert } from '../data/currencies'
-import { buildSeedComponents } from '../data/seedComponents'
+import { buildSeedComponents, SEED_CATALOG_SIGNATURE } from '../data/seedComponents'
 import {
   normalizeComponent,
   normalizePlayerProfile,
@@ -22,26 +22,18 @@ import {
   type Spell,
 } from '../types/worldbuilding'
 import { db, requireUid } from './firebase'
-import { newId } from './id'
 import type { WorkshopRepository } from './repository'
 
 /**
  * Firestore-backed workshop storage, laid out as:
  *
- *   users/{uid}                            -> { seededAt, seedVersion }
+ *   users/{uid}                            -> { seededAt, seedSignature }
  *   users/{uid}/components/{componentId}   -> MaterialComponent
  *   users/{uid}/spells/{spellId}           -> Spell
  *
  * Ids are generated client-side (`lib/id.ts`) and used as document ids, so the `id`
  * field is stripped on write and restored from the snapshot on read.
  */
-
-/**
- * Bumped whenever the starter catalog changes shape, so existing users get the
- * new catalog installed alongside whatever they already have — never over it,
- * so nothing they authored or edited is lost.
- */
-const SEED_VERSION = 15
 
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>
@@ -70,11 +62,14 @@ function toSpell(snapshot: QueryDocumentSnapshot<DocumentData>): Spell {
   return normalizeSpell({ ...(snapshot.data() as Partial<StoredSpell>), id: snapshot.id })
 }
 
-/** Profiles seeded before versioning carry only `seededAt`; treat those as version 1. */
-function installedVersion(profile: DocumentData): number {
-  const stored = profile.seedVersion
-  if (typeof stored === 'number' && Number.isFinite(stored)) return stored
-  return profile.seededAt ? 1 : 0
+/**
+ * The catalog fingerprint a profile was last seeded with. Profiles written before
+ * signatures carry a `seedVersion` number instead, which never matches, so the
+ * first load under this build reinstalls the catalog over what it left behind.
+ */
+function installedSignature(profile: DocumentData): string | null {
+  const stored = profile.seedSignature
+  return typeof stored === 'string' ? stored : null
 }
 
 export class FirestoreWorkshopRepository implements WorkshopRepository {
@@ -119,8 +114,13 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
     const uid = requireUid()
     const existing = (await getDocs(this.components(uid))).docs.map(toComponent)
 
-    const seeded = await this.seedComponents(uid)
-    if (seeded) return this.pruneInert(uid, [...existing, ...seeded])
+    // The catalog is written over its old self, so the seeds read a moment ago are
+    // stale the instant it installs; only what the user authored carries through.
+    const seeded = await this.installCatalog(uid, existing)
+    if (seeded) {
+      const authored = existing.filter((component) => !component.isSeed)
+      return this.pruneInert(uid, [...authored, ...seeded])
+    }
     if (existing.length > 0) return this.pruneInert(uid, existing)
 
     // Empty and this call didn't write it: either StrictMode's other effect just
@@ -147,28 +147,62 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
   }
 
   /**
-   * Installs the starter catalog once per seed version. The version marker is claimed
-   * inside a transaction, so concurrent loads — two tabs, or StrictMode's doubled
-   * effect — can't both write it. Returns the seeds written, or null if none were.
+   * Installs the starter catalog whenever this build's seeds differ from the ones on
+   * record, writing each seed over the document it already occupies rather than
+   * beside it. Identity is the seed's name: a reagent that kept its name keeps its
+   * document id too, so a saved rite still finds what stands in its slots, and only
+   * a seed this build no longer ships is withdrawn.
+   *
+   * Overwriting means the catalog wins. An edit to a seed survives until the catalog
+   * changes and is then written over; anything the user authored (`isSeed` false) is
+   * never touched, and a withdrawn seed can only ever be one the app itself shipped.
+   *
+   * The signature is claimed inside a transaction, so concurrent loads — two tabs, or
+   * StrictMode's doubled effect — can't both install. Returns the seeds written, or
+   * null if the record already matched.
    */
-  private async seedComponents(uid: string): Promise<MaterialComponent[] | null> {
+  private async installCatalog(
+    uid: string,
+    existing: MaterialComponent[],
+  ): Promise<MaterialComponent[] | null> {
     const profileRef = this.profileRef(uid)
+    const installed = new Map(
+      existing.filter((component) => component.isSeed).map((component) => [component.name, component]),
+    )
+    // A seed already standing keeps its document id and the date it was first laid
+    // down; a new one takes the id derived from its name.
+    const catalog = buildSeedComponents().map((seed) => {
+      const previous = installed.get(seed.name)
+      return previous ? { ...seed, id: previous.id, createdAt: previous.createdAt } : seed
+    })
 
-    return runTransaction(db, async (transaction) => {
+    const kept = new Set(catalog.map((component) => component.id))
+    const withdrawn = existing.filter((component) => component.isSeed && !kept.has(component.id))
+
+    const seeded = await runTransaction(db, async (transaction) => {
       const profile = await transaction.get(profileRef)
-      if (profile.exists() && installedVersion(profile.data()) >= SEED_VERSION) return null
+      if (profile.exists() && installedSignature(profile.data()) === SEED_CATALOG_SIGNATURE) {
+        return null
+      }
 
-      const seeded = buildSeedComponents(newId)
-      for (const component of seeded) {
+      for (const component of catalog) {
         transaction.set(doc(this.components(uid), component.id), stripId(component))
       }
       transaction.set(
         profileRef,
-        { seedVersion: SEED_VERSION, seededAt: serverTimestamp() },
+        { seedSignature: SEED_CATALOG_SIGNATURE, seededAt: serverTimestamp() },
         { merge: true },
       )
-      return seeded
+      return catalog
     })
+    if (!seeded) return null
+
+    // Outside the transaction: the delete list comes from a read taken before it, so
+    // it is advisory, and a stray survivor is a duplicate rather than a lost edit.
+    await Promise.all(
+      withdrawn.map((component) => deleteDoc(doc(this.components(uid), component.id))),
+    )
+    return seeded
   }
 
   /** Normalized on write too, so any future caller of this seam can't write bad ledgers. */

@@ -20,6 +20,8 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              carrying heat into light — plus three more at `rare`:
  *              Flywheel doubling up in motion, Seed Crystal doing the same
  *              in mass, and Sun-Cured Tinder carrying light back into heat.
+ *              Superfluid Helium (`singular`) hands its heat back whole and
+ *              adds motion on top, which no other reagent does.
  *              Together with the sources, the four common/uncommon fuels are
  *              the only seven reagents in the tuned envelope that never cost
  *              anything to place, one short of a full ring — the `rare`
@@ -28,18 +30,20 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              tuned against).
  *   Converters trade one currency for another, mostly at a loss. A handful
  *              turn a real profit and are the reliable routes into mass and
- *              back into light and motion. Tungsten Foil (`singular`) reaches
- *              two currencies from one input at once. A third `singular`
- *              entry, the Trapped Antiproton, sits outside even that: a
- *              deliberate outlier priced for scarcity of a different kind —
- *              there is one of it, full stop — rather than for balance.
+ *              back into light and motion. Every ordered pair of currencies
+ *              has one at common or uncommon rarity, so no currency can be
+ *              reached only through `rare` stock. Tungsten Foil (`singular`)
+ *              reaches two currencies from one input at once. A third
+ *              `singular` entry, the Trapped Antiproton, sits outside even
+ *              that: a deliberate outlier priced for scarcity of a different
+ *              kind — there is one of it, full stop — rather than for balance.
  *   Relays     give back the whole of what they take, so current crosses them
- *              for nothing — the wire of the circle. Quartz Filament
- *              (`singular`) carries two currencies at once, both at ceiling.
- *   Sinks      swallow and give nothing back. Three of them, one apiece in
- *              heat, light and mass, all demanded by the dirge, which is
- *              spared the spill only while a sink stands in the ring and is
- *              fully fed.
+ *              for nothing — the wire of the circle. One per currency, plus
+ *              two that carry a pair at once. What a pair is worth against a
+ *              single wire is stated at Steam Main below.
+ *   Sinks      swallow and give nothing back. Five of them, one per currency,
+ *              all demanded by the dirge, which is spared the spill only while
+ *              a sink stands in the ring and is fully fed.
  *
  * The numbers are tuned against facts about the resolver that are easy to miss:
  *
@@ -51,7 +55,9 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *    may feed a fire, but only along eight distinct reagents.
  *  - Nothing common or uncommon sources charge or mass, and nothing at any
  *    rarity sources mass at all; mass is reached only by conversion, and the
- *    converters that reach it carry the catalog's largest numbers.
+ *    converters that reach it carry the catalog's largest numbers. A sink
+ *    stands against each of the five, so any currency can be buried as well as
+ *    raised.
  *  - Heat is the common input: nearly everything below the sources burns it,
  *    making it the easiest currency to raise and the least profitable to keep.
  *  - Only seven reagents (three sources, four fuels) never cost anything to
@@ -213,6 +219,62 @@ const SEEDS: SeedSpec[] = [
     rarity: 'uncommon',
   },
   {
+    name: 'Fire Piston',
+    description:
+      'A hardwood tube bored true, with a greased piston and a scrap of char cloth set in a recess at its tip. One hard stroke of the palm squeezes the air ahead of the piston fast enough to light the cloth. Most of the stroke goes into the tube walls and the rebound, and the ember is what is left over.',
+    demands: { motion: 14 },
+    yields: { heat: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Solenoid',
+    description:
+      'A long coil of insulated wire with a loose iron slug lying in its bore. Wired to a jar battery, the coil hauls the slug to its centre and holds it there, hard enough to trip a latch across the bench. The windings come away hot, and that heat is the part of the current the slug never saw.',
+    demands: { charge: 18 },
+    yields: { motion: 16 },
+    rarity: 'common',
+  },
+  {
+    name: 'Young Sunflower',
+    description:
+      'A sunflower a few weeks old, potted and stood where nothing shades it. The stem grows longer on its shaded side than its lit one, so the head swings east to west across the day and back again overnight. A whole morning of sun on a wide leaf buys that one slow turn.',
+    demands: { light: 14 },
+    yields: { motion: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Duckweed Mat',
+    description:
+      "A green skin of duckweed on standing water, thick enough to lift off in sheets. In strong light it doubles the weight of a pond's whole surface inside a week, and every ounce of that comes out of the air and the water rather than out of anything fed to it. It is slow, and it wants a great deal of light for what it lays down.",
+    demands: { light: 14 },
+    yields: { mass: 15 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Glow-worm Jar',
+    description:
+      'A dozen female glow-worms in a stoppered jar with a little damp moss. Each carries a lit patch beneath her last segments and burns her own substance to keep it lit, giving off a cold green light steady enough to work by for hours. They eat nothing while they glow, and weigh less by morning.',
+    demands: { mass: 14 },
+    yields: { light: 12 },
+    rarity: 'common',
+  },
+  {
+    name: 'Limelight',
+    description:
+      'A pencil of quicklime held in the flame of a blowpipe fed with oxygen. The lime neither melts nor burns away: past a certain heat it simply begins to glow, white enough to throw a hard shadow the width of a stage. Keeping the flame at that heat costs more than the light comes back worth.',
+    demands: { heat: 16 },
+    yields: { light: 14 },
+    rarity: 'uncommon',
+  },
+  {
+    name: 'Thermopile',
+    description:
+      'Twenty short bars of bismuth and antimony soldered alternately into a block, one face blacked and the other held in a water jacket. Warmth on the blacked face raises a current across the junctions and keeps raising it for as long as the two faces disagree. What it is paid for is that disagreement, not the warmth, so most of the warmth crosses the block and is gone.',
+    demands: { heat: 14 },
+    yields: { charge: 16 },
+    rarity: 'uncommon',
+  },
+  {
     name: 'Clock Spring',
     description:
       "A flat steel ribbon wound tight against a sealed brass bellows. Warmth swells the bellows, which takes up the winding a notch at a time and holds it there. A bellows this size can only take up so much before it is fighting the spring's own tension.",
@@ -281,8 +343,8 @@ const SEEDS: SeedSpec[] = [
     description:
       'Mercury ore, ground fine to the vermilion manuscript painters kept for important words. Roasted hard enough, it gives up the metal as a vapour that comes off bright and settles heavy. Most of the roasting heat goes into the air around it, not into the ore.',
     demands: { heat: 16 },
-    yields: { mass: 10, light: 4 },
-    rarity: 'common',
+    yields: { mass: 8, light: 8 },
+    rarity: 'uncommon',
   },
   {
     name: 'Tourmaline',
@@ -374,12 +436,20 @@ const SEEDS: SeedSpec[] = [
     yields: { heat: 18 },
     rarity: 'common',
   },
+  // A relay is neutral when it is fed and pure risk when it is not: it hands
+  // back exactly what it drew, so its demand buys nothing and its shortfall is
+  // billed like anything else's. Transit is flat per crossing rather than per
+  // currency, so carrying two currencies saves no more than carrying one, and
+  // either shortfall is billed while the return is identical. A pair therefore
+  // has to be cheaper than a single wire to be worth reaching for: at heat 10
+  // and motion 14 this was the least useful reagent in the catalog barring the
+  // sinks, and at 8 and 8 it is the most useful of the relays.
   {
-    name: 'Bell Metal',
+    name: 'Steam Main',
     description:
-      'A bronze of about seventy-eight parts copper to twenty-two tin, cast as a disc. Too brittle to take an edge, but struck on the rim it rings a long while, and the note carries the width of the disc undiminished. The metal comes away warm from the striking and does not hold the warmth.',
-    demands: { heat: 10, motion: 14 },
-    yields: { heat: 10, motion: 14 },
+      'A run of iron pipe from the boiler house to the shop, lagged thick in felt and horsehair and clamped every few feet. Live steam driven in at one end arrives at the far end still hot and still moving. A hand laid on the lagging feels no more than the room, so what the boiler put in is what the machine gets.',
+    demands: { heat: 8, motion: 8 },
+    yields: { heat: 8, motion: 8 },
     rarity: 'common',
   },
   {
@@ -407,6 +477,14 @@ const SEEDS: SeedSpec[] = [
     rarity: 'uncommon',
   },
   {
+    name: 'Rock Salt Window',
+    description:
+      'A slab of clear halite, cut and polished dry because a wet cloth ruins the face. Glass stops radiant heat and passes light; rock salt passes both, so a beam through the window arrives on the far side with its warmth still in it. It adds nothing of its own and holds nothing back.',
+    demands: { heat: 12, light: 12 },
+    yields: { heat: 12, light: 12 },
+    rarity: 'uncommon',
+  },
+  {
     name: 'Nautilus Shell',
     description:
       'Cut lengthwise, it shows a spiral of some thirty sealed chambers, each walled off as the animal outgrew it. A thread of tissue runs the length of the spiral and floods or empties the chambers in turn, shifting the weight along the shell to rise or sink.',
@@ -416,8 +494,8 @@ const SEEDS: SeedSpec[] = [
   },
 
   // ---- Sinks: they swallow and hand back nothing ----
-  // Two, against the two currencies easiest to raise. A dirge needs one fed in
-  // full to be spared the spill.
+  // One per currency, so a dirge can be built to bury any of the five. It needs
+  // one of them fed in full to be spared the spill.
   {
     name: 'Lampblack',
     description:
@@ -442,6 +520,22 @@ const SEEDS: SeedSpec[] = [
     yields: {},
     rarity: 'common',
   },
+  {
+    name: 'Dashpot',
+    description:
+      'A brass cylinder of thick oil with a loose piston run down into it. A blow on the piston head arrives at the far end as nothing: the oil has to squeeze past the piston before anything can move, and the whole of the blow goes into shoving oil about. The rod never springs back.',
+    demands: { motion: 16 },
+    yields: {},
+    rarity: 'common',
+  },
+  {
+    name: 'Earthing Rod',
+    description:
+      'A copper rod driven eight feet into wet ground and clamped to whatever must not be allowed to hold a charge. Current put onto it runs off into the earth and keeps going. There is no far end to draw it back from.',
+    demands: { charge: 18 },
+    yields: {},
+    rarity: 'common',
+  },
 
   // ---- Singular: one apiece, doing at a single slot what two rare reagents ----
   // would together. `singular` is a price, not a mechanical rule — nothing in
@@ -461,12 +555,18 @@ const SEEDS: SeedSpec[] = [
     yields: { mass: 12, charge: 12 },
     rarity: 'singular',
   },
+  // This was a relay asking heat 24 and motion 24 for the same back, and it
+  // measured worse than every common converter in the catalog: a relay is
+  // neutral once it is fed, so scale buys it nothing and only widens what a
+  // shortfall costs. A `singular` slot cannot be spent on a role that has no
+  // ceiling to reach, so it reads as a fuel now — the heat crosses whole and
+  // the jet on top of it is free.
   {
-    name: 'Quartz Filament',
+    name: 'Superfluid Helium',
     description:
-      "A single filament of quartz glass, drawn out over a flame and stretched thinner than a hair, then thinner again: the longest length anyone has drawn without a single flaw down its run. Heat runs down its length as fast as through any metal tested against it, and the same thread carries a struck pulse the same distance without damping it, arriving at the far end still sharp enough to read. Every attempt to draw a second this long has snapped somewhere along the way, and none has matched this one's whole run.",
-    demands: { heat: 24, motion: 24 },
-    yields: { heat: 24, motion: 24 },
+      'Helium chilled to within two degrees of the bottom of the scale, where it stops behaving like a liquid. It has no thickness left to it at all, so a warmth held to the inner flask drives the stuff up through a packed plug of emery and out of the spout in a standing jet, and the same warmth crosses the flask and arrives whole on the far side rather than being spent on the driving. The plant that filled this one was broken up for its copper, and no one has built a second.',
+    demands: { heat: 12 },
+    yields: { heat: 12, motion: 12 },
     rarity: 'singular',
   },
   {
@@ -479,11 +579,46 @@ const SEEDS: SeedSpec[] = [
   }
 ]
 
+/**
+ * A seed's document id, derived from its name so the same reagent lands on the
+ * same document every time the catalog is installed. That is what lets a changed
+ * seed be written over its old self instead of installed beside it. Names are
+ * unique across `SEEDS`, and the prefix keeps these clear of `newId`'s uuids.
+ */
+export function seedComponentId(seed: SeedSpec): string {
+  const slug = seed.name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+  return `seed-${slug}`
+}
+
+/**
+ * A fingerprint of the catalog as written here, stored beside the installed copy
+ * so a load can tell whether this build's seeds differ from the ones on record.
+ * It replaces the hand-bumped seed version: editing any seed's numbers, prose or
+ * rarity, or adding or removing one, changes this by itself.
+ *
+ * FNV-1a over the specs — short, stable across runs, and not a security boundary.
+ */
+export const SEED_CATALOG_SIGNATURE: string = (() => {
+  const source = JSON.stringify(SEEDS)
+  let hash = 0x811c9dc5
+  for (let i = 0; i < source.length; i++) {
+    hash ^= source.charCodeAt(i)
+    hash = Math.imul(hash, 0x01000193) >>> 0
+  }
+  return `${SEEDS.length}-${hash.toString(36)}`
+})()
+
 /** Materializes the seed catalog with ids and timestamps. */
-export function buildSeedComponents(makeId: () => string, now = Date.now()): MaterialComponent[] {
+export function buildSeedComponents(
+  makeId: (seed: SeedSpec) => string = seedComponentId,
+  now = Date.now(),
+): MaterialComponent[] {
   return SEEDS.map((seed) => ({
     ...seed,
-    id: makeId(),
+    id: makeId(seed),
     isSeed: true,
     createdAt: now,
     updatedAt: now,

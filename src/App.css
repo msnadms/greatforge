@@ -438,6 +438,40 @@
   opacity: 0.92;
 }
 
+/*
+ * The casting, burning along the current's own route. A Pixi canvas rather than
+ * ink: `components/CircleFire.tsx` draws in the same 100-unit box the engraving
+ * uses, so the fire's geometry is the geometry in `lib/circleFlow.ts`.
+ *
+ * **The whole viewport, not the circle's own square.** The gouts run off the
+ * edge of the desk, and a canvas the size of the circle cuts them off at its
+ * border, which reads as the fire meeting a pane of glass. `fixed` rather than
+ * a bigger absolute box because `.workshop__stage` is `overflow: auto`:
+ * anything overflowing it there is clipped anyway and puts a scrollbar on the
+ * desk into the bargain. The stage inside then places the 100-unit box over
+ * wherever the circle actually is (`fitStage`), so the geometry is unchanged
+ * and only the room around it grew.
+ *
+ * No ancestor of this carries a `transform`, which would make it the containing
+ * block and leave the canvas the size of the circle again — the same trap
+ * `.caster` sets for the dialogs.
+ *
+ * It covers the rails and the header, so it must stay under the dialog scrim
+ * (10) and the drag ghost (50), and can never take a pointer event.
+ */
+.circle__fire {
+  position: fixed;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+}
+
+.circle__fire canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
 .circle__hub {
   position: absolute;
   left: 50%;

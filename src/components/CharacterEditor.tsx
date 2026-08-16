@@ -100,7 +100,7 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
             Cancel
           </button>
           <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? 'Saving…' : character ? 'Save' : 'Enrol'}
+            {saving ? 'Saving…' : character ? 'Save' : 'Enroll'}
           </button>
         </>
       }
@@ -120,7 +120,7 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
           Discipline
           <span className="field__note">
             {character
-              ? 'Trained once and kept. Enrol another caster to work a different one.'
+              ? 'Trained once and kept. Enroll another caster to work a different one.'
               : 'Chosen once. It cannot be changed afterwards.'}
           </span>
         </span>

@@ -35,6 +35,20 @@ export interface CastOutcome {
   keptTotal: number
 }
 
+/**
+ * A rite that was actually spoken, for whatever draws the speaking of one.
+ *
+ * It carries the resolution `castSpell` ran against the *stored* rite, not the
+ * bench's live `reaction` memo. The two agree whenever the working on the bench
+ * is the one being cast, which is the only way to reach the button today, but
+ * they are separate computations and only one of them is the casting.
+ */
+export interface CastEvent {
+  /** Rises with every casting. Two identical rites resolve equal; both must fire. */
+  nonce: number
+  reaction: Reaction
+}
+
 export interface WorkshopValue {
   loading: boolean
   /** Last storage failure, or null. Firestore can fail where localStorage could not. */
@@ -67,6 +81,8 @@ export interface WorkshopValue {
    * casting was refused, with the reason in `error`.
    */
   castSpell: (spellId: string) => Promise<CastOutcome | null>
+  /** The last casting that landed, or null until one does. Never set by a refusal. */
+  lastCast: CastEvent | null
 
   /**
    * The discipline the bench is working under: the active character's in player

@@ -12,7 +12,7 @@ import { RING_SLOT_COUNT, ledgerEntries, ledgerTotal, type Currency, type Ledger
 
 export const DEGREES_PER_SLOT = 360 / RING_SLOT_COUNT
 
-interface Point {
+export interface Point {
   x: number
   y: number
 }
@@ -257,6 +257,14 @@ export interface ManifestLine {
   y2: number
   color: string
   title: string
+  /**
+   * The cubic's own control points, the same two `path` is built from. Carried
+   * so a second drawing of this line can walk the curve rather than rebuild it
+   * `lib/fire.ts` sprays along it, and a bézier reconstructed in two places is
+   * a bézier that eventually disagrees with itself.
+   */
+  c1: Point
+  c2: Point
 }
 
 /**
@@ -298,7 +306,7 @@ function manifestLinePath(
   fanCount: number,
   amount: number,
   geometry: FlowGeometry & { manifest: NonNullable<FlowGeometry['manifest']> },
-): { path: string; start: Point; end: Point } {
+): { path: string; start: Point; end: Point; c1: Point; c2: Point } {
   const { min, max, scale, fanStep } = geometry.manifest
   const origin = radialPoint(MANIFEST_ANGLE, geometry.flowRadius)
   const spread = (fanCount - 1) * fanStep
@@ -326,6 +334,8 @@ function manifestLinePath(
     path: `M ${origin.x} ${origin.y} C ${c1.x} ${c1.y}, ${c2.x} ${c2.y}, ${end.x} ${end.y}`,
     start: origin,
     end,
+    c1,
+    c2,
   }
 }
 
@@ -336,7 +346,10 @@ export function buildManifestLines(manifestation: Ledger, geometry: FlowGeometry
   if (!manifest) return []
   const entries = ledgerEntries(manifestation)
   return entries.map(([currency, amount], index) => {
-    const { path, start, end } = manifestLinePath(index, entries.length, amount, { ...geometry, manifest })
+    const { path, start, end, c1, c2 } = manifestLinePath(index, entries.length, amount, {
+      ...geometry,
+      manifest,
+    })
     return {
       currency,
       amount,
@@ -348,6 +361,8 @@ export function buildManifestLines(manifestation: Ledger, geometry: FlowGeometry
       y2: end.y,
       color: flowBandColor(currencyHue(currency)),
       title: `${CURRENCY_META[currency].label} ${amount}`,
+      c1,
+      c2,
     }
   })
 }

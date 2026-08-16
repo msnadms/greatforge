@@ -4,6 +4,8 @@ import { useWorkshop } from '../state/useWorkshop'
 import { DEGREES_PER_SLOT, radialPoint, slotPoint, type FlowGeometry } from '../lib/circleFlow'
 import type { SlotReport } from '../lib/reaction'
 import { RING_SLOT_COUNT } from '../types/worldbuilding'
+import { buildJet } from '../lib/fire'
+import { CircleFire } from './CircleFire'
 import { CircleFlow } from './CircleFlow'
 import { ComponentSlot } from './ComponentSlot'
 
@@ -80,6 +82,9 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     placeComponent,
     clearSlot,
     mode,
+    lastCast,
+    playMode,
+    draftIsInscribed,
   } = useWorkshop()
 
   const points = useMemo(
@@ -99,6 +104,17 @@ export function SpellCircle({ children }: { children: ReactNode }) {
     for (const slot of reaction.slots) map.set(slot.slotIndex, slot)
     return map
   }, [reaction.slots])
+
+  /**
+   * What the last casting burns, built from the resolution the casting itself
+   * ran rather than from the bench's live preview. Null until a rite is spoken,
+   * and on a ring with nothing in it to burn.
+   */
+  const firing = useMemo(() => {
+    if (!lastCast) return null
+    const jet = buildJet(lastCast.reaction, BENCH_FLOW)
+    return jet ? { nonce: lastCast.nonce, jet } : null
+  }, [lastCast])
 
   /** The names to engrave on the rim, view mode only — in edit mode the card
    * carries its own name. */
@@ -164,6 +180,15 @@ export function SpellCircle({ children }: { children: ReactNode }) {
           titles
         />
       </svg>
+
+      {/* Its canvas is the whole viewport rather than this square, so the gouts
+          can run off the desk: it lies over the reagents and the rails alike,
+          and under the dialog scrim. Still rendered here because the 100-unit
+          box is laid over this element (`fitStage` reads its parent's rect).
+          `armed` is the same test `CastButton` renders itself on, so the
+          renderer is built while the caster is reading the page rather than
+          after they press. */}
+      <CircleFire firing={firing} armed={playMode === 'player' && draftIsInscribed} />
 
       {points.map((point, index) => {
         const id = draft.slots[index]

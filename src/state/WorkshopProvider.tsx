@@ -26,6 +26,7 @@ import {
 import {
   WorkshopContext,
   type BenchMode,
+  type CastEvent,
   type CastOutcome,
   type ComponentDraft,
   type WorkshopValue,
@@ -91,6 +92,9 @@ export function WorkshopProvider({
   // A blank bench has nothing to read yet; only an inscribed working opens in `view`.
   const [mode, setMode] = useState<BenchMode>('edit')
   const [armedComponentId, setArmedComponentId] = useState<string | null>(null)
+  // The last rite spoken, which the circle burns. Set only by a casting that
+  // landed, so nothing anywhere reports an outcome before `castSpell` answers.
+  const [lastCast, setLastCast] = useState<CastEvent | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -478,6 +482,10 @@ export function WorkshopProvider({
       )
       if (!ok) return null
 
+      // The ring as it was actually spoken, for `CircleFire`. After the write,
+      // so a refused casting never burns.
+      setLastCast((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, reaction: resolved }))
+
       return {
         manifestationTotal: resolved.manifestationTotal,
         tollTotal: resolved.tollTotal,
@@ -788,6 +796,7 @@ export function WorkshopProvider({
       dropReagent,
       inventory,
       castSpell,
+      lastCast,
       specialty,
       allowedForms,
       chooseSpecialty,
@@ -834,6 +843,7 @@ export function WorkshopProvider({
       dropReagent,
       inventory,
       castSpell,
+      lastCast,
       specialty,
       allowedForms,
       chooseSpecialty,

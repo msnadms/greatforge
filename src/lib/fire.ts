@@ -218,6 +218,47 @@ export function currencyTone(currency: Currency | null, shade: number): EmberTon
 }
 
 /**
+ * The ring's SVG gradients blend the ledger leaving one slot into the ledger
+ * leaving the next. Match that blend in the fire, too: selecting the largest
+ * ledger entry made a particle switch hue as soon as two amounts crossed.
+ *
+ * Hues are combined as vectors rather than ordinary degrees, so a transition
+ * over the 0/360 seam takes the short, natural route. Saturation and lightness
+ * remain ordinary weighted averages. The tiny per-ember variation is applied
+ * after the mix, which keeps the flame alive without breaking the transition.
+ */
+function ledgerTone(carrying: Ledger, fallbackCurrency: Currency | null, shade: number): EmberTone {
+  const total = ledgerTotal(carrying)
+  if (total <= 0) return currencyTone(fallbackCurrency, shade)
+
+  let hueX = 0
+  let hueY = 0
+  let saturation = 0
+  let lightness = 0
+
+  for (const currency of CURRENCIES) {
+    const amount = carrying[currency] ?? 0
+    if (amount <= 0) continue
+
+    const weight = amount / total
+    const palette = CURRENCY_PALETTE[currency]
+    const stop = palette[Math.min(palette.length - 1, Math.floor(shade * palette.length))]
+    const hue = currencyHue(currency) + stop.hue
+    const radians = (hue * Math.PI) / 180
+    hueX += Math.cos(radians) * weight
+    hueY += Math.sin(radians) * weight
+    saturation += stop.saturation * weight
+    lightness += stop.lightness * weight
+  }
+
+  return {
+    hue: ((Math.atan2(hueY, hueX) * 180) / Math.PI + 360) % 360 + gaussian() * (1 + 2 * shade),
+    saturation: saturation * (0.96 + Math.random() * 0.08),
+    lightness: lightness + gaussian() * (1 + 2 * shade),
+  }
+}
+
+/**
  * A standard normal, by Box-Muller. Fire scatters about a centre rather than
  * filling a box, so every jitter in the renderer is drawn from this instead of
  * from a flat `Math.random() - 0.5`: it feathers at the edges and stays dense
@@ -233,12 +274,27 @@ export function gaussian(): number {
 /**
  * The colour to burn at one point. `shade` runs 0 at the core to 1 at the ember.
  *
- * Every particle follows the dominant currency at that point. A minority
- * currency already has its own neighbouring stretch in the ring; mixing it
- * into the fringe turns a continuous flame into confetti.
+ * Each particle follows the weighted mix of currency currently in flight.
+ * `sampleRun` interpolates neighbouring ledgers, so this makes the flame use
+ * the same soft transition as the engraving beneath it.
  */
 export function sampleTone(sample: JetSample, shade: number): EmberTone {
-  return currencyTone(dominantCurrency(sample.carrying) ?? sample.fallbackCurrency, shade)
+  return ledgerTone(sample.carrying, sample.fallbackCurrency, shade)
+}
+
+/**
+ * A short, even colour journey between two points in a flame. Used where an
+ * exit leaves the ring: its root inherits the circle's current, then it eases
+ * into the colour of what that exit manifests.
+ */
+export function blendEmberTones(from: EmberTone, to: EmberTone, progress: number): EmberTone {
+  const t = Math.min(1, Math.max(0, progress))
+  const hueDistance = ((to.hue - from.hue + 540) % 360) - 180
+  return {
+    hue: (from.hue + hueDistance * t + 360) % 360,
+    saturation: from.saturation + (to.saturation - from.saturation) * t,
+    lightness: from.lightness + (to.lightness - from.lightness) * t,
+  }
 }
 
 
@@ -259,8 +315,8 @@ export interface EmberPalette {
 
 /** Ink on parchment: a near-white core and a softly coloured edge. */
 export const EMBER_LIGHT: EmberPalette = {
-  saturation: [10, 46],
-  lightness: [93, 62],
+  saturation: [3, 46],
+  lightness: [97, 62],
   blend: 'normal',
   alpha: 0.36,
 }
@@ -289,8 +345,8 @@ export const EMBER_LIGHT: EmberPalette = {
  * unaffected by what its saturation does.
  */
 export const EMBER_DARK: EmberPalette = {
-  saturation: [8, 48],
-  lightness: [90, 63],
+  saturation: [3, 48],
+  lightness: [95, 63],
   blend: 'add',
   alpha: 0.34,
 }

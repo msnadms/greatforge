@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef } from 'react'
 import type { Application, Particle, ParticleContainer, Texture } from 'pixi.js'
 import {
   BURST_SECONDS,
+  blendEmberTones,
   EMBER_DARK,
   EMBER_LIGHT,
   EXIT_REACH,
@@ -18,6 +19,7 @@ import {
   gaussian,
   sampleTone,
   type EmberPalette,
+  type EmberTone,
   type Jet,
   type JetExit,
   type JetSample,
@@ -43,8 +45,14 @@ const WISP_WIDTH = 42
 const WISP_HEIGHT = 84
 
 /** Shared scale keeps the ring and its exit streams in the same visual family. */
-const WISP_SCALE = 2
+const WISP_SCALE = 4
 
+/**
+ * The ring is the casting's heart, so let its near-white core occupy a little
+ * more of each wisp than the escaping gouts. Colour still owns the outer edge
+ * and every exit keeps its stronger currency read.
+ */
+const RING_CORE_BIAS = 0.78
 /**
  * Enough for a whole ring alight at once, plus the burst, with room over. Far
  * larger than a comet trail needed, because the body below keeps every stretch
@@ -167,6 +175,13 @@ const EXIT_WIDTH = 1.8
 const EXIT_FLARE = 0.35
 
 /**
+ * The first section of an exit is still the circle's current. Giving the
+ * colour this much room to turn prevents each fan line from looking pasted
+ * onto the rim while it remains short enough to name its own manifestation.
+ */
+const EXIT_COLOR_BLEND = 0.28
+
+/**
  * How wide a gout runs at `u`, as a multiple of the ring band's spread. One at
  * the mouth, where the gout is the band carrying on, `EXIT_WIDTH` from
  * `EXIT_FLARE` on.
@@ -192,8 +207,14 @@ interface Ember {
   vy: number
   size: number
   fade: number
+  /** Core-to-ember position, fixed at birth so a wisp keeps one colour ramp. */
+  shade: number
   /** Set where this ember is climbing an exit line rather than flying free. */
   exit: JetExit | null
+  /** The colour the ring had at the mouth, retained while an exit turns away. */
+  originTone: EmberTone | null
+  /** The currency colour this exit settles into. */
+  exitTone: EmberTone | null
   u: number
   du: number
   /** How far off the line it sits at birth, so a gout has width at its root. */
@@ -347,7 +368,10 @@ class FireStage {
       vy: 0,
       size: 0,
       fade: 0,
+      shade: 0,
       exit: null,
+      originTone: null,
+      exitTone: null,
       u: 0,
       du: 0,
       root: 0,
@@ -413,6 +437,7 @@ class FireStage {
     ember.live = true
     ember.age = 0
     ember.life = PARTICLE_SECONDS * (0.5 + shade * 0.9)
+    ember.shade = shade
     ember.x = sample.x + nx * spread
     ember.y = sample.y + ny * spread
     ember.vx = sample.tx * carry + nx * out
@@ -420,8 +445,10 @@ class FireStage {
     ember.size = (0.55 + 1.35 * sample.heat) * (0.55 + 1.25 * shade) * weight
     ember.fade = this.palette.alpha * (0.3 + 0.7 * sample.heat) * (1 - 0.5 * shade) * weight
     ember.exit = null
+    ember.originTone = null
+    ember.exitTone = null
 
-    ember.particle.tint = emberColor(this.palette, sampleTone(sample, shade), shade)
+    ember.particle.tint = emberColor(this.palette, sampleTone(sample, shade), shade * RING_CORE_BIAS)
     ember.particle.alpha = ember.fade
   }
 
@@ -433,7 +460,7 @@ class FireStage {
    * the mouth as a stream rather than as a pulse of blobs all starting together.
    * `weight` is the douse, so a gout dims with the ring instead of stopping dead.
    */
-  private lightExit(exit: JetExit, share: number, weight: number) {
+  private lightExit(exit: JetExit, origin: JetSample, share: number, weight: number) {
     const ember = this.take()
     if (!ember) return
 
@@ -441,6 +468,7 @@ class FireStage {
     ember.live = true
     ember.age = 0
     ember.life = EXIT_SECONDS * (0.7 + shade * 0.6)
+    ember.shade = shade
     ember.exit = exit
     ember.u = Math.min(0.9, Math.abs(gaussian()) * EXIT_SIGMA)
     ember.du = (EXIT_SPEED * (0.75 + Math.random() * 0.6)) / exitLength(exit)
@@ -453,7 +481,13 @@ class FireStage {
     ember.fade =
       this.palette.alpha * (0.3 + 0.7 * share) * (1 - 0.5 * shade) * weight * EXIT_WEIGHT
 
-    ember.particle.tint = emberColor(this.palette, currencyTone(exit.currency, shade), shade)
+    ember.originTone = sampleTone(origin, shade)
+    ember.exitTone = currencyTone(exit.currency, shade)
+    ember.particle.tint = emberColor(
+      this.palette,
+      blendEmberTones(ember.originTone, ember.exitTone, ember.u / EXIT_COLOR_BLEND),
+      shade,
+    )
     ember.particle.alpha = ember.fade
   }
 
@@ -527,7 +561,7 @@ class FireStage {
             (this.exitBudget[index] ?? 0) + dt * EXIT_RATE * (0.35 + 0.65 * share) * douse
           while (this.exitBudget[index] >= 1) {
             this.exitBudget[index] -= 1
-            this.lightExit(exit, share, douse)
+            this.lightExit(exit, jet.path[jet.path.length - 1], share, douse)
           }
         })
 
@@ -590,6 +624,13 @@ class FireStage {
         const off = ember.root * exitWidth(ember.u) + ember.drift * ember.age
         ember.x = point.x - heading.y * off
         ember.y = point.y + heading.x * off
+        if (ember.originTone && ember.exitTone) {
+          ember.particle.tint = emberColor(
+            this.palette,
+            blendEmberTones(ember.originTone, ember.exitTone, ember.u / EXIT_COLOR_BLEND),
+            ember.shade,
+          )
+        }
         // Thins as it goes without ever reaching nothing. The fan's own strokes
         // fade out at the tip; the fire runs on past there, and a gout that had
         // already faded to nothing by the tip would never make the screen's

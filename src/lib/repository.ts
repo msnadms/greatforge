@@ -1,4 +1,4 @@
-import type { MaterialComponent, PlayerProfile, Spell } from '../types/worldbuilding'
+import type { Character, MaterialComponent, PlayerProfile, Spell } from '../types/worldbuilding'
 
 /**
  * Storage seam for the workshop. `firestoreRepository.ts` is the only implementation;
@@ -7,6 +7,10 @@ import type { MaterialComponent, PlayerProfile, Spell } from '../types/worldbuil
 export interface WorkshopRepository {
   getProfile(): Promise<PlayerProfile>
   saveProfile(profile: PlayerProfile): Promise<void>
+
+  listCharacters(): Promise<Character[]>
+  saveCharacter(character: Character): Promise<void>
+  deleteCharacter(id: string): Promise<void>
 
   listComponents(): Promise<MaterialComponent[]>
   saveComponent(component: MaterialComponent): Promise<void>

@@ -1,4 +1,4 @@
-import { useMemo, useState, type CSSProperties, type PointerEvent } from 'react'
+import { useMemo, useRef, useState, type CSSProperties, type MouseEvent, type PointerEvent } from 'react'
 import {
   CURRENCY_LIST,
   ROLES,
@@ -11,13 +11,16 @@ import { ledgerForCaster } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import {
+  MAX_REAGENT_STOCK,
   RARITIES,
   ledgerTotal,
+  stockCount,
   type Currency,
   type Ledger,
   type MaterialComponent,
 } from '../types/worldbuilding'
 import { ComponentEditor } from './ComponentEditor'
+import { flash } from './flash'
 import { LedgerLine } from './LedgerLine'
 
 const VIEWS = ['list', 'grid'] as const
@@ -108,11 +111,111 @@ function CurrencyFilter({
   )
 }
 
+/**
+ * Which shelf the tray is reading in player mode: what the caster carries, or
+ * the whole pool it may be taken from. Sandbox has only the one, since the
+ * codex is the satchel there.
+ */
+const BROWSING = ['satchel', 'pool'] as const
+
+type Browsing = (typeof BROWSING)[number]
+
+const BROWSING_LABEL: Record<Browsing, string> = {
+  satchel: 'Carried',
+  pool: 'Pool',
+}
+
+/**
+ * How many of a pool reagent to take, and the button that takes them.
+ *
+ * **Declared at module scope, not inside `ComponentTray`.** A component defined
+ * during a render is a new type on every render, so React unmounts and remounts
+ * it — the number input would lose focus on each keystroke.
+ *
+ * **The number is this row's own state, not the tray's.** Held above, a
+ * keystroke in one pool card re-rendered every other row in the catalog; it is
+ * wanted only when Take is pressed, and that is when it is handed up.
+ */
+function TakeControl({
+  component,
+  carried,
+  compact,
+  onTake,
+}: {
+  component: MaterialComponent
+  carried: number
+  /** Grid view: a third of the rail, so the word and the prose don't fit. */
+  compact?: boolean
+  onTake: (quantity: number) => void
+}) {
+  const [quantity, setQuantity] = useState(1)
+  const takeBtn = useRef<HTMLButtonElement>(null)
+  const full = carried >= MAX_REAGENT_STOCK
+  return (
+    <div
+      className={`tray__take${compact ? ' tray__take--compact' : ''}`}
+      onClick={(event) => event.stopPropagation()}
+      role="presentation"
+    >
+      <input
+        type="number"
+        className="tray__qty"
+        min={1}
+        max={MAX_REAGENT_STOCK}
+        step={1}
+        value={quantity}
+        aria-label={`How many ${component.name} to take`}
+        disabled={full}
+        onChange={(event) => {
+          const value = Math.floor(Number(event.target.value))
+          setQuantity(Number.isFinite(value) ? Math.min(MAX_REAGENT_STOCK, Math.max(1, value)) : 1)
+        }}
+      />
+      <button
+        ref={takeBtn}
+        type="button"
+        className={`btn btn--small${compact ? ' tray__takeBtn' : ''}`}
+        disabled={full}
+        aria-label={compact ? `Take ${quantity} ${component.name}` : undefined}
+        title={full ? 'The satchel will hold no more of this.' : compact ? 'Take' : undefined}
+        onClick={() => {
+          // Both satchel flashes acknowledge the press: neither `takeReagent`
+          // nor `dropReagent` reports back, and a failed write lands in `error`
+          // for `StorageAlert` to render. The cast button, which does get an
+          // outcome, flashes on that instead.
+          flash(takeBtn.current, 'btn--flash')
+          onTake(quantity)
+        }}
+      >
+        {compact ? '+' : 'Take'}
+      </button>
+      {/* The grid card has no room for the tally, and the satchel shelf is
+          where a caster reads what they are carrying anyway. */}
+      {!compact && carried > 0 ? <span className="tray__carried">carrying {carried}</span> : null}
+    </div>
+  )
+}
+
 export function ComponentTray() {
-  const { components, armedComponentId, armComponent, deleteComponent, loading, mode, draft } =
-    useWorkshop()
+  const {
+    components,
+    placeableComponents,
+    canAuthorComponents,
+    playMode,
+    activeCharacter,
+    takeReagent,
+    dropReagent,
+    inventory,
+    armedComponentId,
+    armComponent,
+    deleteComponent,
+    loading,
+    mode,
+    draft,
+  } = useWorkshop()
   const { startDrag } = useDrag()
   const [view, setView] = useState<View>('list')
+  const [browsing, setBrowsing] = useState<Browsing>('satchel')
   const [query, setQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<Role | 'all'>('all')
   const [sort, setSort] = useState<Sort>('name')
@@ -140,10 +243,15 @@ export function ComponentTray() {
     setGives(new Set())
   }
 
+  // Sandbox reads the whole codex and lays any of it. A player reads what the
+  // caster carries, and steps over to the pool to take more.
+  const inPool = playMode === 'player' && browsing === 'pool'
+  const shelf = inPool ? components : placeableComponents
+
   const visible = useMemo(() => {
     const needle = query.trim().toLowerCase()
     // Any of the checked currencies within a column, all of the columns across them.
-    const matched = components.filter((component) => {
+    const matched = shelf.filter((component) => {
       if (roleFilter !== 'all' && describeRole(component) !== roleFilter) return false
       if (asks.size > 0 && !touchesAny(component.demands, asks)) return false
       if (gives.size > 0 && !touchesAny(component.yields, gives)) return false
@@ -157,13 +265,15 @@ export function ComponentTray() {
     return matched.sort(
       (a, b) => compareBy(sort, a, b) || a.name.localeCompare(b.name),
     )
-  }, [components, query, roleFilter, sort, asks, gives])
+  }, [shelf, query, roleFilter, sort, asks, gives])
 
-  // Scaled once per catalog view rather than per row on every render.
+  // Scaled once per catalog, keyed on the two things a scaled ledger actually
+  // depends on. Keyed on `visible` it re-scaled every matching row on every
+  // keystroke, sort and filter — none of which change what a ledger scales to.
   const scaledLedgers = useMemo(
     () =>
       new Map(
-        visible.map((component) => [
+        components.map((component) => [
           component.id,
           {
             demands: ledgerForCaster(component.demands, draft.casterLevel),
@@ -171,7 +281,7 @@ export function ComponentTray() {
           },
         ]),
       ),
-    [visible, draft.casterLevel],
+    [components, draft.casterLevel],
   )
 
   function openEditor(component: MaterialComponent | null) {
@@ -179,7 +289,26 @@ export function ComponentTray() {
     setEditorOpen(true)
   }
 
-  const canPlace = mode === 'edit'
+  // A reagent is armed and dragged from the shelf it may actually be laid from.
+  // The pool is a place to take from, not to place out of.
+  const canPlace = mode === 'edit' && !inPool
+
+  /**
+   * Right-click puts one back. This is the whole of the return path — the
+   * satchel rows carry no buttons of their own — so it takes the browser menu
+   * only where there is actually something to give back, and never over the
+   * take control, where a number field wants its own menu.
+   */
+  function handleContextMenu(event: MouseEvent<HTMLLIElement>, component: MaterialComponent) {
+    if (playMode !== 'player') return
+    if ((event.target as HTMLElement).closest('.tray__take')) return
+    if (stockCount(inventory, component.id) === 0) return
+    event.preventDefault()
+    // The last one of a stack takes its row off the satchel shelf with it, so
+    // the flash is what a press on a stack that survives it looks like.
+    flash(event.currentTarget, 'tray__item--flash')
+    void dropReagent(component.id, 1)
+  }
 
   function handlePointerDown(event: PointerEvent<HTMLLIElement>, component: MaterialComponent) {
     // Let the Edit/Remove buttons take their own presses.
@@ -191,7 +320,7 @@ export function ComponentTray() {
   return (
     <section className="panel tray">
       <div className="tray__head">
-        <h2 className="panel__title">Codex</h2>
+        <h2 className="panel__title">{playMode === 'player' ? 'Satchel' : 'Codex'}</h2>
         <div className="tray__viewToggle" role="group" aria-label="Codex view">
           {VIEWS.map((option) => (
             <button
@@ -204,11 +333,33 @@ export function ComponentTray() {
               {VIEW_LABEL[option]}
             </button>
           ))}
-          <button type="button" className="btn btn--small" onClick={() => openEditor(null)}>
-          + New
-        </button>
+          {canAuthorComponents ? (
+            <button type="button" className="btn btn--small" onClick={() => openEditor(null)}>
+              + New
+            </button>
+          ) : null}
         </div>
       </div>
+
+      {playMode === 'player' ? (
+        <div className="tray__viewToggle tray__shelfToggle" role="group" aria-label="Shelf">
+          {BROWSING.map((option) => (
+            <button
+              key={option}
+              type="button"
+              className={`tray__viewStep${option === browsing ? ' tray__viewStep--active' : ''}`}
+              aria-pressed={option === browsing}
+              onClick={() => {
+                setBrowsing(option)
+                armComponent(null)
+              }}
+            >
+              {BROWSING_LABEL[option]}
+              {option === 'satchel' ? ` (${placeableComponents.length})` : null}
+            </button>
+          ))}
+        </div>
+      ) : null}
 
       <div className="tray__filters">
         <input
@@ -265,11 +416,15 @@ export function ComponentTray() {
       </div>
       {loading ? (
         <p className="tray__empty">Opening the codex…</p>
+      ) : playMode === 'player' && !activeCharacter ? (
+        <p className="tray__empty">Enrol a caster to carry anything.</p>
       ) : visible.length === 0 ? (
         <p className="tray__empty">
           {filtered
-            ? 'No material in the codex answers to that. Loosen the filters, or write one that does.'
-            : 'Nothing here. Add a component to begin.'}
+            ? 'No material here answers to that. Loosen the filters.'
+            : playMode === 'player'
+              ? 'This caster carries nothing. Take what you need from the pool.'
+              : 'Nothing here. Add a component to begin.'}
         </p>
       ) : (
         <ul className={`tray__list${view === 'grid' ? ' tray__list--grid' : ''}`}>
@@ -278,22 +433,51 @@ export function ComponentTray() {
             const role = describeRole(component)
             const demands = scaledLedgers.get(component.id)?.demands ?? {}
             const yields = scaledLedgers.get(component.id)?.yields ?? {}
+            // The sandbox carries nothing, so the empty stock answers 0 on its
+            // own and needs no mode branch of its own here.
+            const carried = stockCount(inventory, component.id)
             return (
               <li
                 key={component.id}
                 className={`tray__item${view === 'grid' ? ' tray__item--card' : ''}${armed ? ' tray__item--armed' : ''}${canPlace ? '' : ' tray__item--inert'}`}
                 style={{ '--slot-hue': componentHue(component) } as CSSProperties}
+                title={carried > 0 ? 'Right-click to put one back.' : undefined}
                 onPointerDown={(event) => handlePointerDown(event, component)}
+                onContextMenu={(event) => handleContextMenu(event, component)}
                 onClick={() => {
                   if (canPlace) armComponent(armed ? null : component.id)
                 }}
               >
                 {view === 'grid' ? (
                   // The same compact card a filled, editable slot on the circle draws:
-                  // name and ledger only, no prose.
+                  // name and ledger only, no prose. In the pool the card is the
+                  // button that takes it, since there is no room for a row of
+                  // actions and taking is the only thing to do here.
                   <span className="slot__body">
                     <span className="slot__name">{component.name}</span>
                     <LedgerLine demands={demands} yields={yields} labels="none" />
+                    {inPool ? (
+                      <TakeControl
+                        component={component}
+                        carried={carried}
+                        compact
+                        onTake={(quantity) => void takeReagent(component.id, quantity)}
+                      />
+                    ) : (
+                      <span className="tray__foot">
+                        <span
+                          className="tray__mark"
+                          role="img"
+                          aria-label={component.rarity}
+                          title={component.rarity}
+                        >
+                          {component.rarity[0].toUpperCase()}
+                        </span>
+                        {playMode === 'player' ? (
+                          <span className="tray__count tray__count--stack">×{carried}</span>
+                        ) : null}
+                      </span>
+                    )}
                   </span>
                 ) : (
                   <>
@@ -310,32 +494,47 @@ export function ComponentTray() {
 
                     <div className="tray__meta">
                       <span className="tray__rarity">{component.rarity}</span>
+                      {playMode === 'player' && !inPool ? (
+                        <span className="tray__count tray__count--stack">×{carried}</span>
+                      ) : null}
                     </div>
 
-                    <div className="tray__actions">
-                      <button
-                        type="button"
-                        className="btn btn--small"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          openEditor(component)
-                        }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        type="button"
-                        className="btn btn--small btn--danger"
-                        onClick={(event) => {
-                          event.stopPropagation()
-                          if (confirm(`Remove "${component.name}" from the codex?`)) {
-                            void deleteComponent(component.id)
-                          }
-                        }}
-                      >
-                        Remove
-                      </button>
-                    </div>
+                    {/* Authoring is the sandbox's and the pool is the player's,
+                        so the two are never both offered. */}
+                    {canAuthorComponents ? (
+                      <div className="tray__actions">
+                        <button
+                          type="button"
+                          className="btn btn--small"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            openEditor(component)
+                          }}
+                        >
+                          Edit
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn--small btn--danger"
+                          onClick={(event) => {
+                            event.stopPropagation()
+                            if (confirm(`Remove "${component.name}" from the codex?`)) {
+                              void deleteComponent(component.id)
+                            }
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    ) : inPool ? (
+                      <div className="tray__actions">
+                        <TakeControl
+                          component={component}
+                          carried={carried}
+                          onTake={(quantity) => void takeReagent(component.id, quantity)}
+                        />
+                      </div>
+                    ) : null}
                   </>
                 )}
               </li>

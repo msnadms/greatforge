@@ -6,7 +6,8 @@ import { SpellCircle } from './components/SpellCircle'
 import { SpellList } from './components/SpellList'
 import { Spellbook } from './components/Spellbook'
 import { StorageAlert } from './components/StorageAlert'
-import { SpecialtyControl } from './components/SpecialtyControl'
+import { BenchToggle, CasterBar } from './components/CasterBar'
+import { CastButton } from './components/CastButton'
 import { AuthProvider } from './state/AuthProvider'
 import { DragProvider } from './state/DragProvider'
 import { useAuth } from './state/useAuth'
@@ -15,14 +16,24 @@ import { WorkshopProvider } from './state/WorkshopProvider'
 import './App.css'
 
 function SpellActions() {
-  const { mode, editDraft, saveDraft } = useWorkshop()
+  const { mode, playMode, editDraft, saveDraft } = useWorkshop()
 
   return (
     <div className="stage__actions">
       {mode === 'view' ? (
-        <button type="button" className="btn btn--small btn--primary" onClick={editDraft}>
-          Edit
-        </button>
+        <>
+          {/* Speaking the rite is the point of the player bench, so Edit gives up
+              the emphasis there and keeps it in the sandbox, where it is the
+              only thing to do with a written page. */}
+          <button
+            type="button"
+            className={`btn btn--small${playMode === 'player' ? '' : ' btn--primary'}`}
+            onClick={editDraft}
+          >
+            Edit
+          </button>
+          <CastButton />
+        </>
       ) : (
         <button type="button" className="btn btn--small btn--primary" onClick={() => void saveDraft()}>
           Inscribe
@@ -43,9 +54,13 @@ function Workshop() {
         <header className="workshop__header">
           <h1>Greatforge</h1>
           <p>Spell workshop</p>
-          <SpecialtyControl />
-          <StorageAlert />
-          <AccountBadge />
+          <CasterBar />
+          {/* The bench switch rides with the account: both are switches on the
+              whole workshop rather than on the working in front of it. */}
+          <div className="workshop__account">
+            <BenchToggle />
+            <AccountBadge />
+          </div>
         </header>
 
         <aside className="workshop__rail workshop__rail--left">
@@ -57,6 +72,10 @@ function Workshop() {
           <SpellCircle>
             <Spellbook />
           </SpellCircle>
+          {/* Anchored to the stage's bottom-left corner rather than the header,
+              where `.caster` is centred absolutely and a long message ran under
+              it. */}
+          <StorageAlert />
         </main>
 
         <aside className="workshop__rail workshop__rail--right">

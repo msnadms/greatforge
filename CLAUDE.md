@@ -49,6 +49,50 @@ Four layers, strictly one-directional (`types` ← `data`/`lib` ← `state` ← 
 
 `App.tsx` gates the whole workshop behind Google sign-in and keys `WorkshopProvider` by `user.uid` so switching accounts remounts rather than leaking the previous codex.
 
+### Sandbox and player
+
+`PlayerProfile.mode` is `'sandbox'` or `'player'`, stored on the profile and switched by `BenchToggle`, which sits with the account badge rather than with the caster — it is a switch on the whole workshop, the same kind of thing as signing out, not a property of whoever is standing at the bench. `CasterBar` keeps the centre of the header for *who* that is: the discipline select in sandbox, the character select in player mode. This is a different axis from `WorkshopProvider.mode` in the next section, which is `'view'`/`'edit'` — that one is about the working on the bench, this one about who is standing at it. Both are live at once.
+
+**Neither mode changes a single rule the resolver runs.** `computeReaction` never learns which one is set. What they change is what the caster may reach for before it runs, and every restriction is enforced in `WorkshopProvider` rather than only in the markup — the same belt-and-braces `patchSlots` already uses, since a pointer press begun before a mode changed can still land.
+
+| | sandbox | player |
+| --- | --- | --- |
+| discipline | `profile.specialty`, rechosen at will | the character's, fixed at creation |
+| scale | any, to 5 | the character's level or below |
+| what may be laid | the whole catalog | only what the character carries |
+| authoring reagents | yes | no — the pool is drawn on, not written |
+| shelf | rites with no character | that character's rites |
+| casting | not offered | `Cast` on an inscribed rite, spending the satchel |
+
+**A character is the unit player mode is built around** (`Character` in `types/worldbuilding.ts`): a name, a discipline, a level, and an inventory of component ids. A profile keeps any number of them, and each is a separate codex of rites — `Spell.characterId` names its author, and `null` means the sandbox, which is how every spell written before this field survives it.
+
+**Striking a caster takes that codex and their satchel with them**, and the button lives in `CharacterEditor` rather than beside the character select for that reason: the confirmation names what goes by count, where a ✕ in the header read as closing something. See `deleteCharacter` under "Firestore" for the sweep.
+
+**The discipline is fixed at creation, and that is the whole reason characters exist.** A player wanting another discipline enrols another character. `CharacterEditor` disables the select when editing rather than hiding it, so the choice is still readable; `chooseSpecialty` refuses outright in player mode, so the rule holds even if the form were bypassed. `updateCharacter` deliberately takes only `name` and `level` — there is no code path that would change a specialty.
+
+**Level caps a working rather than setting it.** A character writes at its own scale or any below it, so a level-4 caster can still inscribe the level-1 working they learned first. `LevelControl` shows the steps beyond that reach dashed and disabled instead of hiding them: what a caster cannot yet work at is part of what the control says about them. `updateDraft` and `saveDraft` both refuse a level past the cap.
+
+**The satchel is counted, and writing a rite costs nothing — speaking one is what spends.** `Character.inventory` is a `ReagentStock`, component id to count. Reagents are taken from the pool freely and in any quantity (`takeReagent`, the tray's Carried/Pool toggle and its per-row quantity), and only `castSpell` ever takes any back out. A working can therefore be drafted, retuned and inscribed against reagents the caster does not own: the circle is a diagram until it is spoken.
+
+**`lib/casting.ts` holds the two counts, and they are deliberately different.** `required` is every reagent standing in the ring — all of it has to be in hand, since a thing must be held to be laid in the circle. `spent` is `required` less whatever a met dirge preserves (`Reaction.keptSlots`), which is the clause `keptSlots` was built for and what `ComponentSlot` already promises the player. `CastButton` and `WorkshopProvider.castSpell` both read that one module rather than counting separately, so the button's disabled state and the refusal in state can never disagree. A casting is refused whole: no partial spend, and the reason lands in `error`.
+
+**Counted per placement rather than assumed one apiece.** Law 5 admits each material once, so the two agree today; counting keeps it correct rather than merely lucky if that rule is ever relaxed.
+
+**`CastButton` predicts nothing, and that is the whole of its design.** It is always live, a press always reaches `castSpell`, and the line beside it says what that press did. Refusals go to `error` like every other failed write, which `StorageAlert` already renders — the button holds no reading of the satchel of its own.
+
+Both bugs it has had came from breaking that rule, and they are worth keeping written down because the second one was introduced fixing the first:
+
+- **`disabled` while the caster was short** swallowed the click outright — no event, no error, nothing. Taking the missing reagents then re-enabled the button silently, so the next press cast, and the sequence read as though the rite had been queued and fired the moment the satchel could pay for it. Nothing was ever queued, but a control that refuses in silence and then works cannot be told apart from one that waits.
+- **A live shortfall note**, added in its place, masked the success line the instant a casting landed: spending is exactly what makes the caster stop carrying what the ring stood on, so `short` went non-empty on every successful cast and — sitting above the outcome in the render chain — reported "2 reagents not carried" over a rite that had just been spoken.
+
+A pre-flight hint is not worth a third attempt at this. The satchel already shows every count.
+
+**A satchel written before quantities existed loads as one of each.** `normalizeStock` takes an array as well as a map, since `inventory` shipped as a plain `string[]` first — the same read-and-write-side normalization a component's ledger uses.
+
+**`placeableComponents` resolves the satchel's ids through the catalog, so a dangling one drops out on its own.** That matters because seeds are withdrawn by name when the catalog signature changes, and a discarded component would otherwise need a write to every character holding it. `components` stays the whole catalog regardless of mode, because a *placed* reagent is still resolved from it — a rite must render even if its author later put that reagent back.
+
+**A dialog must be portalled to the document.** `.caster` centres itself with `transform: translateX(-50%)`, and a transformed ancestor becomes the containing block for `position: fixed`, so `.overlay`'s `inset: 0` resolves to that small header box instead of the viewport — the dialog comes up high and behind the spell circle. `components/EditorDialog.tsx` holds the scrim, the form, the heading, the error line and the footer row, and does the `createPortal(…, document.body)` once for both editors. `ComponentEditor` opens from the right rail and would not need it on its own; portalling from the shell means the next dialog opened from a transformed corner cannot rediscover the bug.
+
 ### The bench has two modes
 
 `WorkshopProvider.mode` is `'view'` or `'edit'`. **An inscribed working opens in `view`** — `selectSpell` sets it, and `editDraft` (the book's Edit button) is the only way out. `newSpell` and a deleted-out-from-under draft go to `'edit'`; a successful `saveDraft` returns to `'view'`, which is what closes the round trip.
@@ -152,7 +196,9 @@ The cost is 2 to 4 units on a frontier ring (3 to 5 currencies in, one out), tak
 
 **Its ground is the ring you cannot close, which is a real state once reagents are scarce.** Best ring an invoker can build from a stock of *n* reagents, level 5, net, on the common and uncommon envelope: at 3 and 4 the Herald Benediction (28, 32), at 5, 6 and 7 the Answering Litany (32, 41, 50), at 8 the invocation (60). Four forms, four bands. Per reagent spent the litany and the invocation nearly level, 7.1 against 7.5, and weighted by rarity they tie at 4.8, so neither is the other's strict better. Its own full-ring option falls from 53 to 34, which is the point rather than a cost. On the stored frontier's own objective, most manifestation under a toll cap, the number goes *down*, 50.3 to 47.5, since the closed rings that were scoring 50 are exactly the ones now excluded; all ten of its recorded rings are seven reagents with a gap, met at every level. The invoker's four read prayer 43.2, **invocation 55.0**, Answering Litany 47.5, Herald Benediction 30.0. In the sampled cohorts it beats the prayer on its own ground either way, 23.2 against 13.0 fed and 43.0 against 33.4 careless, and it answers its own condition on 22% of ordinary rings, the highest of the invoker's three conditions.
 
-**Nothing here is stocked or consumed yet.** The scarcity argument above is about a model the app does not have: no reagent has a count, and no casting spends one, though `ComponentSlot.tsx` already tells the player a dirge's kept reagents will not be consumed and `Reaction.keptSlots` is built for that future write. If a stock model does land, the whole form ladder wants re-tuning against net *per reagent* rather than per casting, and on that measure the ordering is different again: the Herald Benediction's three reagents return 9.3 each, ahead of the invocation's 7.5 and the litany's 7.1.
+**Reagents are stocked and consumed at the player bench, and nowhere else.** A character's satchel counts what it carries, and `castSpell` spends it — see "Sandbox and player" above and `lib/casting.ts`. `Reaction.keptSlots` is what that write reads, so a met dirge's preserved reagents survive being spoken exactly as `ComponentSlot.tsx` has always promised. The sandbox is unstocked, and **no balance number in this file is affected**: the resolver never sees a satchel, and none of the cohorts, frontiers or probes model scarcity.
+
+**The form ladder is still tuned per casting, and a stocked game wants it re-tuned per reagent.** On that measure the ordering is different: the Herald Benediction's three reagents return 9.3 each, ahead of the invocation's 7.5 and the litany's 7.1. That re-tuning has not been done — casting spends stock, but nothing yet prices a form against how much stock it burns.
 
 **A relay still crosses free under a stated pair.** `metTransit` used to replace the whole price table, relay branch included, which law 2 forbids in as many words ("none through a relay, wherever it stands"). `statedTransitCost` in `lib/reaction.ts` answers the relay before it answers anything else. **This is latent again and must stay.** It only shows on a stated pair that charges something for a reagent crossing, and the one stated pair charges nothing, so a relay and an ordinary reagent currently cost the same under it. That was also true of the shipped version, false for the half-price version in between, and true once more now. The ordering is what keeps law 2 true of any pair a future specialty states, not an optimization for the pair that exists.
 
@@ -293,9 +339,10 @@ Conditions are found by rejection sampling against the real predicates in `FORM_
 ## Firestore
 
 ```
-users/{uid}                          -> { seedSignature, seededAt }
+users/{uid}                          -> { seedSignature, seededAt, specialty, mode, activeCharacterId }
+users/{uid}/characters/{characterId} -> Character (name, fixed specialty, level, counted inventory)
 users/{uid}/components/{componentId} -> MaterialComponent (id stripped; document id carries it)
-users/{uid}/spells/{spellId}         -> Spell (carries its own casterLevel)
+users/{uid}/spells/{spellId}         -> Spell (carries its own casterLevel and characterId)
 ```
 
 `firestore.rules` restricts everything under `users/{uid}` to that uid. Ids are minted client-side (`lib/id.ts`), except a seed's, which is its name slugged (`seed-flint-and-steel`).
@@ -310,6 +357,7 @@ Traps in `firestoreRepository.ts`:
   **Override reaches seeds only.** A component with `isSeed` false is never touched, and an edit to a seed stands until the catalog next changes and is then written over — which is the point of overriding rather than installing alongside.
 - **`Spell.casterLevel` defaults to 1 (`DEFAULT_CASTER_LEVEL`) for a spell written before the field existed**, via `normalizeCasterLevel` inside `normalizeSpell` — the same read-and-write-side normalization pattern as a component's ledger.
 - **`loadComponents` is not read-only**: `pruneInert` deletes any component whose two ledgers are both empty, which is how pre-ledger leftovers get cleared.
+- **`deleteCharacter` sweeps the character's whole shelf, then the character.** A `where('characterId', '==', id)` query finds the rites; the satchel is a field on the character document and goes with it. The catalog is untouched, since reagents are the account's and a carried one is only a count. Sandbox rites carry `characterId: null` and never match the query, which is what keeps them out of it. **The shelf and the character go in one `writeBatch`**, so the sweep is a single commit and there is no ordering to get right: it lands whole or not at all, where two separate writes left either a character standing over a shortened shelf or rites no bench could reach. A batch holds 500 writes, well past any real shelf. `WorkshopProvider.deleteCharacter` filters `allSpells` by the same id so state and storage shed the same rites, and resets the draft if the working on the bench was that caster's. **This used to strike the character alone**, on the reasoning that sweeping a shelf is a larger action than the button says; the button now says it, in the editor and with the counts in the confirmation. `firestore.rules` needs no change for the new collection — it already matches `users/{uid}/{document=**}`.
 - Firestore uses `persistentLocalCache` with multi-tab support, so the workshop stays readable and writable offline.
 
 ## Conventions

@@ -45,9 +45,34 @@ export const CASTER_SPECIALTIES = ['warden', 'invoker', 'mourner'] as const
 
 export type CasterSpecialty = (typeof CASTER_SPECIALTIES)[number]
 
-/** A deliberately small account record, stored beside the seed marker. */
+/**
+ * Which of the two benches the workshop is standing at.
+ *
+ * `sandbox` is the workshop as an author's tool: one discipline chosen and
+ * rechosen at will, the whole catalog in reach, any scale. `player` is the same
+ * resolver read through a character — a discipline fixed at creation, a scale
+ * capped by the character's own, and only the reagents that character carries.
+ * Neither mode changes a single rule the resolver runs; they change what the
+ * caster is allowed to reach for before it runs.
+ */
+export const PLAY_MODES = ['sandbox', 'player'] as const
+
+export type PlayMode = (typeof PLAY_MODES)[number]
+
+/** The workshop opens as the author's tool; a player asks for the other bench. */
+export const DEFAULT_PLAY_MODE: PlayMode = 'sandbox'
+
+/**
+ * A deliberately small account record, stored beside the seed marker.
+ *
+ * `specialty` is the *sandbox* discipline and nothing else. A character carries
+ * its own, fixed, and player mode reads that one instead — see `Character`.
+ */
 export interface PlayerProfile {
   specialty: CasterSpecialty | null
+  mode: PlayMode
+  /** Which character the player bench is standing at, or null for none yet. */
+  activeCharacterId: string | null
 }
 
 /** Old profiles predate specialties and must choose before writing a new rite. */
@@ -56,6 +81,8 @@ export function normalizePlayerProfile(input: Partial<PlayerProfile> | undefined
     specialty: CASTER_SPECIALTIES.includes(input?.specialty as CasterSpecialty)
       ? (input?.specialty as CasterSpecialty)
       : null,
+    mode: PLAY_MODES.includes(input?.mode as PlayMode) ? (input?.mode as PlayMode) : DEFAULT_PLAY_MODE,
+    activeCharacterId: typeof input?.activeCharacterId === 'string' ? input.activeCharacterId : null,
   }
 }
 
@@ -158,6 +185,9 @@ export type CasterLevel = (typeof CASTER_LEVELS)[number]
 /** A new working starts at the bottom rung. */
 export const DEFAULT_CASTER_LEVEL: CasterLevel = 1
 
+/** Full power, and the sandbox's ceiling. Read off the table so extending it carries. */
+export const MAX_CASTER_LEVEL: CasterLevel = CASTER_LEVELS[CASTER_LEVELS.length - 1]
+
 /**
  * The flat transit cost's own fraction, on a curve shallower than
  * `LEVEL_POWER`'s: it reaches 1 (full, catalog-scale cost) by level 4 rather
@@ -246,6 +276,112 @@ export interface Placement {
   component: MaterialComponent
 }
 
+/**
+ * How many of each reagent a caster carries, by component id. Absent means
+ * none, and a zero is dropped rather than stored — the same rule a `Ledger`
+ * keeps, and for the same reason.
+ */
+export type ReagentStock = Record<string, number>
+
+/** Most of any one reagent a satchel will hold. A stack, not a warehouse. */
+export const MAX_REAGENT_STOCK = 99
+
+/**
+ * Coerces a stored satchel to whole positive counts.
+ *
+ * **An array reads as one of each.** Satchels were a plain list of ids before
+ * quantities existed, so a character written then still loads, carrying a
+ * single one of everything it had taken.
+ */
+export function normalizeStock(input: unknown): ReagentStock {
+  const next: ReagentStock = {}
+  if (Array.isArray(input)) {
+    for (const id of input) {
+      if (typeof id === 'string' && id) next[id] = Math.min(MAX_REAGENT_STOCK, (next[id] ?? 0) + 1)
+    }
+    return next
+  }
+  if (!input || typeof input !== 'object') return next
+  for (const [id, raw] of Object.entries(input as Record<string, unknown>)) {
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
+    const count = Math.min(MAX_REAGENT_STOCK, Math.floor(raw))
+    if (count > 0) next[id] = count
+  }
+  return next
+}
+
+export function stockCount(stock: ReagentStock, id: string): number {
+  return stock[id] ?? 0
+}
+
+/** How many reagents the satchel holds in all, stacks counted. */
+export function stockTotal(stock: ReagentStock): number {
+  return Object.values(stock).reduce((total, count) => total + count, 0)
+}
+
+/**
+ * The satchel with one reagent set to a new count.
+ *
+ * **The one place the counting rules live.** A count is clamped to a whole
+ * number no greater than `MAX_REAGENT_STOCK`, and one that reaches zero is
+ * dropped rather than stored — the same invariant `normalizeStock` enforces on
+ * read, written once so a writer cannot leave a `0` behind. That matters
+ * because `placeableComponents` reads the satchel's keys: a stored zero is a
+ * ghost reagent on the shelf.
+ */
+export function withStock(stock: ReagentStock, id: string, count: number): ReagentStock {
+  const next = { ...stock }
+  const held = Math.min(MAX_REAGENT_STOCK, Math.max(0, Math.floor(count)))
+  if (held > 0) next[id] = held
+  else delete next[id]
+  return next
+}
+
+/**
+ * One caster at the player bench. A profile may keep any number of them, and
+ * each is a separate codex of rites: the character's own name, the discipline
+ * it was made with, the scale it has reached, and what it carries.
+ *
+ * **The specialty is fixed at creation.** A player picks a discipline once, per
+ * character, and makes another character to work a different one — which is why
+ * characters exist at all rather than a level and a satchel hanging off the
+ * profile. `chooseSpecialty` refuses to run in player mode for the same reason.
+ *
+ * `level` caps a working rather than setting it: a character may write a rite at
+ * its own scale or any lesser one, so a level-4 caster can still inscribe the
+ * level-1 working they learned first.
+ *
+ * `inventory` starts empty and is counted. Reagents are taken from the pool
+ * freely, in any quantity, and spent by casting — never by writing. Inscribing
+ * a rite costs nothing, so a working can be drafted and retuned without owning
+ * anything; speaking it is what consumes what stands in the circle.
+ */
+export interface Character {
+  id: string
+  name: string
+  specialty: CasterSpecialty
+  level: CasterLevel
+  inventory: ReagentStock
+  createdAt: number
+  updatedAt: number
+}
+
+/** A character always has a discipline; a stored record missing one is a warden. */
+export function normalizeCharacter(input: Partial<Character> & { id: string }): Character {
+  const now = Date.now()
+  return {
+    id: input.id,
+    name: input.name?.trim() || 'Unnamed caster',
+    specialty: CASTER_SPECIALTIES.includes(input.specialty as CasterSpecialty)
+      ? (input.specialty as CasterSpecialty)
+      : 'warden',
+    level: normalizeCasterLevel(input.level),
+    inventory: normalizeStock(input.inventory),
+    createdAt: input.createdAt ?? now,
+    updatedAt: input.updatedAt ?? now,
+  }
+}
+
 export interface Spell {
   id: string
   title: string
@@ -253,6 +389,13 @@ export interface Spell {
   form: SpellForm
   /** Discipline that wrote this rite, retained for specialty-specific form rules. */
   specialty: CasterSpecialty | null
+  /**
+   * The character who inscribed it, or null for one written at the sandbox
+   * bench. Each character's shelf shows only its own rites; a spell written
+   * before characters existed reads as null and stays in the sandbox, which is
+   * how existing work survives this field being added.
+   */
+  characterId: string | null
   /**
    * The power this working was set to. Belongs to the spell rather than the
    * caster: the level scales every placed reagent's ledger before the walk reads
@@ -366,6 +509,7 @@ export function normalizeSpell(input: Partial<Spell> & { id: string }): Spell {
     specialty: CASTER_SPECIALTIES.includes(input.specialty as CasterSpecialty)
       ? (input.specialty as CasterSpecialty)
       : null,
+    characterId: typeof input.characterId === 'string' ? input.characterId : null,
     casterLevel: normalizeCasterLevel(input.casterLevel),
     text: input.text ?? '',
     notes: input.notes ?? '',

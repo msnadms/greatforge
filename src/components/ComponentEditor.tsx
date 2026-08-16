@@ -2,6 +2,7 @@ import { useState, type CSSProperties, type FormEvent } from 'react'
 import { CURRENCY_LIST, ROLE_HINT, describeRole, isInert } from '../data/currencies'
 import { useWorkshop } from '../state/useWorkshop'
 import type { ComponentDraft } from '../state/workshopContext'
+import { EditorDialog } from './EditorDialog'
 import {
   MAX_LEDGER_ENTRY,
   RARITIES,
@@ -80,20 +81,23 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
   }
 
   return (
-    <div className="overlay" onClick={onClose} role="presentation">
-      <form
-        className="editor"
-        onSubmit={handleSubmit}
-        onClick={(event) => event.stopPropagation()}
-        onKeyDown={(event) => {
-          if (event.key === 'Escape') onClose()
-        }}
-        role="dialog"
-        aria-modal="true"
-        aria-label={component ? `Edit ${component.name}` : 'New component'}
-      >
-        <h2 className="panel__title">{component ? 'Edit component' : 'New component'}</h2>
-
+    <EditorDialog
+      title={component ? 'Edit component' : 'New component'}
+      ariaLabel={component ? `Edit ${component.name}` : 'New component'}
+      error={error}
+      onClose={onClose}
+      onSubmit={handleSubmit}
+      actions={
+        <>
+          <button type="button" className="btn" onClick={onClose}>
+            Cancel
+          </button>
+          <button type="submit" className="btn btn--primary" disabled={saving}>
+            {saving ? 'Saving…' : component ? 'Save' : 'Add to codex'}
+          </button>
+        </>
+      }
+    >
         <label className="field">
           <span className="field__label">Name</span>
           <input
@@ -184,17 +188,6 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
           </select>
         </label>
 
-        {error && <p className="editor__error">{error}</p>}
-
-        <div className="editor__actions">
-          <button type="button" className="btn" onClick={onClose}>
-            Cancel
-          </button>
-          <button type="submit" className="btn btn--primary" disabled={saving}>
-            {saving ? 'Saving…' : component ? 'Save' : 'Add to codex'}
-          </button>
-        </div>
-      </form>
-    </div>
+    </EditorDialog>
   )
 }

@@ -1,5 +1,5 @@
 import { useWorkshop } from '../state/useWorkshop'
-import { CASTER_LEVELS } from '../types/worldbuilding'
+import { LevelSteps } from './LevelSteps'
 
 /**
  * The scale this working is set to. Scales what every reagent demands and
@@ -7,28 +7,29 @@ import { CASTER_LEVELS } from '../types/worldbuilding'
  * open slot never moves. See the eighth law in `data/currencies.ts`.
  */
 export function LevelControl() {
-  const { draft, updateDraft } = useWorkshop()
+  const { draft, updateDraft, maxCasterLevel, playMode } = useWorkshop()
 
   return (
     <div
       className="field"
       title="Scales what every reagent in this working demands and yields, together, and the lap's cost with them. The spill at an open slot stays the same."
     >
-      <span className="field__label">Scale</span>
-      <div className="level__steps" role="group" aria-label="Spell scale">
-        {CASTER_LEVELS.map((level) => (
-          <button
-            key={level}
-            type="button"
-            className={`level__step${level === draft.casterLevel ? ' level__step--active' : ''}`}
-            aria-pressed={level === draft.casterLevel}
-            aria-label={`Scale ${level}`}
-            onClick={() => updateDraft({ casterLevel: level })}
-          >
-            {level}
-          </button>
-        ))}
-      </div>
+      <span className="field__label">
+        Scale
+        {/* A character writes at its own scale or any lesser one, so the steps
+            above it are shown and barred rather than hidden — what a caster
+            cannot yet reach is part of what the control says. */}
+        {playMode === 'player' ? (
+          <span className="field__note">This caster reaches {maxCasterLevel}.</span>
+        ) : null}
+      </span>
+      <LevelSteps
+        value={draft.casterLevel}
+        max={maxCasterLevel}
+        label="Spell scale"
+        beyondHint="Beyond this caster’s reach."
+        onChange={(casterLevel) => updateDraft({ casterLevel })}
+      />
     </div>
   )
 }

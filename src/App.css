@@ -89,13 +89,22 @@
 
 /* ------------------------------------------------------------------ account */
 
-.account {
+/* The bench switch and the account together, held to the right of the header.
+   The auto margin lives here rather than on `.account` so the two stay one
+   group rather than two things that can be pushed apart. */
+.workshop__account {
   margin-left: auto;
   display: flex;
   align-items: center;
   align-self: center; /* The header aligns to baselines; this group aligns to itself. */
+  gap: 12px;
+  flex: 0 0 auto;
+}
+
+.account {
+  display: flex;
+  align-items: center;
   gap: 10px;
-  /* The alert takes the auto margin when present, so hold this group to the right. */
   flex: 0 0 auto;
 }
 
@@ -115,12 +124,87 @@
   color: var(--text);
 }
 
-/* -------------------------------------------------------------- specialty */
+/* -------------------------------------------------------------------- cast */
 
-.specialty-control {
+.cast {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* The outcome sits beside the button rather than replacing it: the satchel has
+   already moved, and this says by how much. */
+.cast__note {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* ------------------------------------------------------------------- bench */
+
+/* Sandbox against player, as one segmented control so the two read as the two
+   settings of one switch rather than as a pair of buttons. */
+.bench {
+  display: flex;
+  flex: 0 0 auto;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.bench__step {
+  padding: 3px 10px;
+  border: 0;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease;
+}
+
+.bench__step + .bench__step {
+  border-left: 1px solid var(--border-strong);
+}
+
+.bench__step:hover {
+  color: var(--text-h);
+}
+
+.bench__step--active {
+  background: var(--accent-bg);
+  color: var(--text-h);
+}
+
+/* ------------------------------------------------------------------ caster */
+
+/* The bench and whoever is standing at it, centred over the header. The group
+   carries the centring the discipline select used to carry alone. */
+.caster {
   position: absolute;
   left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  transform: translateX(-50%);
+}
+
+.caster__character {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.caster__none {
+  font-family: var(--heading);
+  font-size: 16px;
+  color: var(--text);
+}
+
+.caster__select,
+.specialty-control {
   width: auto;
+  max-width: 34ch;
   padding: 2px 22px 2px 4px;
   border: 0;
   border-radius: 0;
@@ -128,7 +212,11 @@
   font-family: var(--heading);
   font-size: 20px;
   color: var(--text-h);
-  transform: translateX(-50%);
+}
+
+/* A caster's name and discipline is a longer string than a bare discipline. */
+.caster__select {
+  font-size: 16px;
 }
 
 /* -------------------------------------------------------------------- level */
@@ -162,11 +250,30 @@
   color: var(--text-h);
 }
 
+/* Past this caster's reach. Shown rather than hidden: what a caster cannot yet
+   work at is part of what the control says about them. */
+.level__step--beyond {
+  border-style: dashed;
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.level__step--beyond:hover {
+  border-color: var(--border-strong);
+}
+
+/* The stage's bottom-left corner. It sat in the header flex row before, where
+   `.caster` is centred absolutely over the same line and a long message ran
+   under the caster controls. Opaque and shadowed, since it now lies over the
+   circle rather than in a bar of its own. */
 .storage-alert {
-  margin-left: auto;
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  z-index: 4;
+  margin: 0;
   display: flex;
   align-items: center;
-  align-self: center;
   gap: 10px;
   max-width: 46ch;
   padding: 6px 10px;
@@ -175,7 +282,8 @@
   font-size: 12px;
   line-height: 1.4;
   color: var(--danger);
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
+  background: color-mix(in srgb, var(--danger) 12%, var(--panel));
+  box-shadow: var(--shadow);
 }
 
 .storage-alert button {
@@ -207,6 +315,8 @@
 
 .workshop__stage {
   grid-area: stage;
+  /* Containing block for the storage alert, which hangs in the bottom corner. */
+  position: relative;
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
   place-items: center;
@@ -1158,6 +1268,91 @@
   gap: 3px;
 }
 
+/* Carried against pool: a row of its own under the head, since it changes what
+   the whole tray is reading rather than how it is drawn. */
+.tray__shelfToggle {
+  margin: 0 0 8px;
+}
+
+.tray__take {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tray__qty {
+  width: 52px;
+  padding: 2px 4px;
+  font-size: 11px;
+  text-align: right;
+}
+
+.tray__carried {
+  font-size: 11px;
+  color: var(--text);
+}
+
+/* A grid card is a third of the rail. The word "Take" and the carried prose
+   both wrap there and push the ledger off the card, so the button becomes a
+   glyph, the field takes two digits, and the tally sits on its own line. */
+.tray__take--compact {
+  gap: 3px;
+  width: 100%;
+  justify-content: center;
+  /* Sits on the card's bottom edge, wherever the name and ledger end. */
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+.tray__take--compact .tray__qty {
+  width: 32px;
+  padding: 1px 2px;
+  text-align: center;
+  appearance: textfield;
+}
+
+/* Spinners eat about half of a 32px field, and the number is typed here. */
+.tray__take--compact .tray__qty::-webkit-inner-spin-button,
+.tray__take--compact .tray__qty::-webkit-outer-spin-button {
+  appearance: none;
+  margin: 0;
+}
+
+.tray__takeBtn {
+  padding: 1px 6px;
+  font-size: 14px;
+  line-height: 1.2;
+}
+
+/* The grid card's bottom line: the rarity mark on the left, the carried tally
+   on the right. The pool card draws the take control here instead — a shelf
+   you are drawing from is not the place to be told what is scarce. */
+.tray__foot {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  margin-top: auto;
+  padding-top: 4px;
+}
+
+/* The rarity in one letter — C, U, R, S. The card is a third of the rail and
+   the word spelled out costs a line the ledger needs. */
+.tray__mark {
+  flex: none;
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border: 1px solid var(--border-strong);
+  border-radius: 50%;
+  font-size: 10px;
+  line-height: 1;
+  color: var(--rune);
+}
+
 .tray__viewStep {
   padding: 3px 8px;
   border: 1px solid var(--border-strong);
@@ -1230,6 +1425,14 @@
   margin-left: auto;
 }
 
+/* How many of this the caster is holding. Reads as a tally, not a ledger
+   figure, so it stays plain rather than taking a currency hue. Must follow
+   `.tray__count`, which sets a colour of its own at the same specificity. */
+.tray__count--stack {
+  font-variant-numeric: tabular-nums;
+  color: var(--text-h);
+}
+
 .tray__empty {
   font-size: 12px;
   font-style: italic;
@@ -1274,6 +1477,20 @@
 .tray__item--armed {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-bg);
+}
+
+/* One put back. See `.btn--flash` for why the keyframe states `from` alone.
+   The hued left border goes red with the rest of the edge for the flash: the
+   row is saying something about the stack, not about the currency. */
+.tray__item--flash {
+  animation: flash-danger 0.45s ease-out;
+}
+
+@keyframes flash-danger {
+  from {
+    border-color: var(--danger);
+    background: var(--danger-wash);
+  }
 }
 
 /* The codex while a working is being read: still editable, but nothing here can
@@ -1325,6 +1542,9 @@
  */
 .tray__item--card .slot__body {
   align-items: center;
+  /* Fills the square so the foot row can be pushed to the bottom edge. */
+  flex: 1;
+  width: 100%;
 }
 
 .tray__item--card .ledgerLine {
@@ -1710,6 +1930,42 @@ body.is-dragging * {
   color: var(--danger);
 }
 
+/*
+ * One-shot flashes on a write's outcome: gilt for a reagent taken or a rite
+ * spoken, red for a casting refused, and red again on the row that put a
+ * reagent back. Added and stripped by `flash()` in `components/flash.ts`.
+ *
+ * Each keyframe states `from` alone, so the animation runs from the flash back
+ * to whatever the element normally draws — one rule serves the list row and the
+ * grid card, whose resting backgrounds differ. It also lands on the base value
+ * rather than jumping to it, which is what keeps `.btn`'s own transition from
+ * firing a second, slower fade when the animation is removed.
+ *
+ * The button's colour is a custom property the keyframe reads, so gold and red
+ * are one animation rather than two identical ones. `--flash` is static while
+ * it runs; a var() in a keyframe resolves against the element, not the frame.
+ */
+.btn--flash,
+.btn--flashDanger {
+  animation: flash-btn 0.45s ease-out;
+}
+
+.btn--flash {
+  --flash: var(--gilt);
+}
+
+.btn--flashDanger {
+  --flash: var(--danger);
+}
+
+@keyframes flash-btn {
+  from {
+    background: var(--flash);
+    border-color: var(--flash);
+    color: var(--panel);
+  }
+}
+
 /* ------------------------------------------------------------------- editor */
 
 .overlay {
@@ -1745,6 +2001,11 @@ body.is-dragging * {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
+}
+
+/* Struck off to the left, away from the button the hand goes to. */
+.editor__strike {
+  margin-right: auto;
 }
 
 /* --------------------------------------------------------------- responsive */
@@ -1814,10 +2075,15 @@ body.is-dragging * {
 }
 
 @media (max-width: 640px) {
-  .specialty-control {
+  .caster {
     position: static;
+    flex-wrap: wrap;
     margin-left: auto;
     transform: none;
+  }
+
+  .caster__select,
+  .specialty-control {
     font-size: 16px;
   }
 }

@@ -4,9 +4,12 @@ import {
   doc,
   getDoc,
   getDocs,
+  query,
   runTransaction,
   serverTimestamp,
   setDoc,
+  where,
+  writeBatch,
   type CollectionReference,
   type DocumentData,
   type QueryDocumentSnapshot,
@@ -14,9 +17,11 @@ import {
 import { isInert } from '../data/currencies'
 import { buildSeedComponents, SEED_CATALOG_SIGNATURE } from '../data/seedComponents'
 import {
+  normalizeCharacter,
   normalizeComponent,
   normalizePlayerProfile,
   normalizeSpell,
+  type Character,
   type MaterialComponent,
   type PlayerProfile,
   type Spell,
@@ -27,7 +32,8 @@ import type { WorkshopRepository } from './repository'
 /**
  * Firestore-backed workshop storage, laid out as:
  *
- *   users/{uid}                            -> { seededAt, seedSignature }
+ *   users/{uid}                            -> { seededAt, seedSignature, mode, … }
+ *   users/{uid}/characters/{characterId}   -> Character
  *   users/{uid}/components/{componentId}   -> MaterialComponent
  *   users/{uid}/spells/{spellId}           -> Spell
  *
@@ -38,6 +44,7 @@ import type { WorkshopRepository } from './repository'
 /** Timestamps stay plain epoch numbers, matching the types and sorting without conversion. */
 type StoredComponent = Omit<MaterialComponent, 'id'>
 type StoredSpell = Omit<Spell, 'id'>
+type StoredCharacter = Omit<Character, 'id'>
 
 /** The document id carries the id, so it isn't duplicated inside the document body. */
 function stripId<T extends { id: string }>(entity: T): Omit<T, 'id'> {
@@ -77,6 +84,10 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
     return doc(db, 'users', uid)
   }
 
+  private characters(uid: string): CollectionReference<DocumentData> {
+    return collection(db, 'users', uid, 'characters')
+  }
+
   private components(uid: string): CollectionReference<DocumentData> {
     return collection(db, 'users', uid, 'components')
   }
@@ -94,6 +105,42 @@ export class FirestoreWorkshopRepository implements WorkshopRepository {
 
   async saveProfile(profile: PlayerProfile): Promise<void> {
     await setDoc(this.profileRef(requireUid()), normalizePlayerProfile(profile), { merge: true })
+  }
+
+  async listCharacters(): Promise<Character[]> {
+    const snapshot = await getDocs(this.characters(requireUid()))
+    return snapshot.docs.map((entry) =>
+      normalizeCharacter({ ...(entry.data() as Partial<StoredCharacter>), id: entry.id }),
+    )
+  }
+
+  async saveCharacter(character: Character): Promise<void> {
+    const uid = requireUid()
+    await setDoc(doc(this.characters(uid), character.id), stripId(normalizeCharacter(character)))
+  }
+
+  /**
+   * Strikes the character and everything only it held: its shelf of rites, and
+   * the satchel, which is a field on the character document and so goes with it.
+   * The catalog is untouched — reagents are the account's, drawn on rather than
+   * owned, and a carried one is a count in the satchel and nothing more.
+   *
+   * **The shelf and the character go in one batch**, so the sweep is a single
+   * commit that either lands whole or not at all — there is no ordering to get
+   * right and no state where a character stands over a shortened shelf, or
+   * where rites outlive the only bench that could reach them. One batch holds
+   * 500 writes, which is far more rites than a caster accumulates.
+   *
+   * Sandbox rites carry `characterId: null` and never match, so the equality
+   * query is also what keeps them out of it.
+   */
+  async deleteCharacter(id: string): Promise<void> {
+    const uid = requireUid()
+    const shelf = await getDocs(query(this.spells(uid), where('characterId', '==', id)))
+    const batch = writeBatch(db)
+    for (const entry of shelf.docs) batch.delete(entry.ref)
+    batch.delete(doc(this.characters(uid), id))
+    await batch.commit()
   }
 
   /**

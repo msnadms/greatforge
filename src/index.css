@@ -21,6 +21,7 @@
   --accent-bg: rgba(156, 107, 18, 0.12);
   --accent-border: rgba(156, 107, 18, 0.55);
   --danger: #9b2c2c;
+  --danger-wash: rgba(155, 44, 44, 0.14);
   /* Slots a form's condition names. Never red — that means unmet demand, not this. */
   --named: #9a6f1f;
   --named-wash: rgba(154, 111, 31, 0.14);
@@ -65,6 +66,7 @@
     --accent-bg: rgba(217, 164, 65, 0.16);
     --accent-border: rgba(217, 164, 65, 0.5);
     --danger: #e07070;
+    --danger-wash: rgba(224, 112, 112, 0.18);
     /* A heavier wash — 14% is nearly invisible over a dark panel. */
     --named: #d8a94a;
     --named-wash: rgba(216, 169, 74, 0.16);

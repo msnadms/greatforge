@@ -3,32 +3,46 @@ import { firestoreRepository } from '../lib/firestoreRepository'
 import { newId } from '../lib/id'
 import type { WorkshopRepository } from '../lib/repository'
 import { computeReaction, resolvePlacements } from '../lib/reaction'
+import { castingCost, missingReagents, spentCount, stockAfterCasting } from '../lib/casting'
 import { describeRole } from '../data/currencies'
 import { formsForSpecialty } from '../data/casterSpecialties'
 import {
   DEFAULT_CASTER_LEVEL,
+  MAX_CASTER_LEVEL,
   emptySlots,
   normalizePlayerProfile,
+  stockCount,
+  withStock,
+  type CasterLevel,
   type CasterSpecialty,
+  type Character,
   type MaterialComponent,
+  type PlayMode,
   type PlayerProfile,
+  type ReagentStock,
   type Spell,
   type SpellForm,
 } from '../types/worldbuilding'
 import {
   WorkshopContext,
   type BenchMode,
+  type CastOutcome,
   type ComponentDraft,
   type WorkshopValue,
 } from './workshopContext'
 
-function blankSpell(form: SpellForm = 'prayer', specialty: CasterSpecialty | null = null): Spell {
+function blankSpell(
+  form: SpellForm = 'prayer',
+  specialty: CasterSpecialty | null = null,
+  characterId: string | null = null,
+): Spell {
   const now = Date.now()
   return {
     id: newId(),
     title: '',
     form,
     specialty,
+    characterId,
     casterLevel: DEFAULT_CASTER_LEVEL,
     text: '',
     notes: '',
@@ -43,6 +57,10 @@ function byUpdatedDesc(a: Spell, b: Spell): number {
 }
 
 function byName(a: MaterialComponent, b: MaterialComponent): number {
+  return a.name.localeCompare(b.name)
+}
+
+function byCharacterName(a: Character, b: Character): number {
   return a.name.localeCompare(b.name)
 }
 
@@ -63,8 +81,11 @@ export function WorkshopProvider({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [profile, setProfile] = useState<PlayerProfile>(() => normalizePlayerProfile(undefined))
+  const [characters, setCharacters] = useState<Character[]>([])
   const [components, setComponents] = useState<MaterialComponent[]>([])
-  const [spells, setSpells] = useState<Spell[]>([])
+  // Every rite the account holds. What the shelf shows is `spells` below, the
+  // slice belonging to whichever bench is standing.
+  const [allSpells, setAllSpells] = useState<Spell[]>([])
   const [draft, setDraft] = useState<Spell>(blankSpell)
   const [dirty, setDirty] = useState(false)
   // A blank bench has nothing to read yet; only an inscribed working opens in `view`.
@@ -75,17 +96,34 @@ export function WorkshopProvider({
     let cancelled = false
     void (async () => {
       try {
-        const [loadedProfile, loadedComponents, loadedSpells] = await Promise.all([
+        const [loadedProfile, loadedCharacters, loadedComponents, loadedSpells] = await Promise.all([
           repository.getProfile(),
+          repository.listCharacters(),
           repository.listComponents(),
           repository.listSpells(),
         ])
         if (cancelled) return
         setProfile(loadedProfile)
+        setCharacters([...loadedCharacters].sort(byCharacterName))
         setComponents([...loadedComponents].sort(byName))
-        setSpells([...loadedSpells].sort(byUpdatedDesc))
-        if (loadedProfile.specialty) {
-          setDraft(blankSpell(formsForSpecialty(loadedProfile.specialty)[1], loadedProfile.specialty))
+        setAllSpells([...loadedSpells].sort(byUpdatedDesc))
+
+        // The bench opens on a blank working belonging to whichever mode was
+        // stored, under that bench's own discipline.
+        const opening =
+          loadedProfile.mode === 'player'
+            ? loadedCharacters.find((entry) => entry.id === loadedProfile.activeCharacterId) ?? null
+            : null
+        const openingSpecialty =
+          loadedProfile.mode === 'player' ? opening?.specialty ?? null : loadedProfile.specialty
+        if (openingSpecialty) {
+          setDraft(
+            blankSpell(
+              formsForSpecialty(openingSpecialty)[1],
+              openingSpecialty,
+              opening?.id ?? null,
+            ),
+          )
         }
       } catch (cause) {
         if (cancelled) return
@@ -118,28 +156,359 @@ export function WorkshopProvider({
     [components],
   )
 
+  const playMode = profile.mode
+
+  const activeCharacter = useMemo(
+    () =>
+      playMode === 'player'
+        ? characters.find((entry) => entry.id === profile.activeCharacterId) ?? null
+        : null,
+    [characters, playMode, profile.activeCharacterId],
+  )
+
+  /**
+   * The discipline the bench works under. A character's is fixed at creation and
+   * overrides the profile's, which is the sandbox's alone.
+   */
+  const specialty = playMode === 'player' ? activeCharacter?.specialty ?? null : profile.specialty
+
   const allowedForms = useMemo(
-    () => (profile.specialty ? formsForSpecialty(profile.specialty) : []),
-    [profile.specialty],
+    () => (specialty ? formsForSpecialty(specialty) : []),
+    [specialty],
+  )
+
+  /** A character writes at its own scale or any lesser one; the sandbox reads the catalog whole. */
+  const maxCasterLevel =
+    playMode === 'player' ? activeCharacter?.level ?? DEFAULT_CASTER_LEVEL : MAX_CASTER_LEVEL
+
+  const canAuthorComponents = playMode === 'sandbox'
+
+  /**
+   * What may be laid in the circle. In player mode that is the satchel, resolved
+   * through the catalog so an id left behind by a withdrawn seed simply drops
+   * out rather than drawing an empty row.
+   */
+  const placeableComponents = useMemo(() => {
+    if (playMode !== 'player') return components
+    if (!activeCharacter) return []
+    return Object.keys(activeCharacter.inventory)
+      .map((id) => componentsById.get(id))
+      .filter((component): component is MaterialComponent => Boolean(component))
+      .sort(byName)
+  }, [activeCharacter, components, componentsById, playMode])
+
+  /** The active character's satchel, or nothing carried at the sandbox bench. */
+  const inventory: ReagentStock = useMemo(
+    () => activeCharacter?.inventory ?? {},
+    [activeCharacter],
+  )
+
+  /** Each character keeps its own shelf; the sandbox keeps the rites with no character. */
+  const spells = useMemo(
+    () =>
+      allSpells.filter((spell) =>
+        playMode === 'player' ? spell.characterId === activeCharacter?.id : spell.characterId === null,
+      ),
+    [activeCharacter?.id, allSpells, playMode],
+  )
+
+  /**
+   * Whether the working on the bench has been inscribed, or is still a draft
+   * that exists nowhere but here. Read against every rite the account holds
+   * rather than the standing bench's shelf: the question is whether this
+   * working was ever written down, not whose shelf it would sit on.
+   */
+  const draftIsInscribed = useMemo(
+    () => allSpells.some((spell) => spell.id === draft.id),
+    [allSpells, draft.id],
+  )
+
+  /** Clears the bench onto a fresh working belonging to the caster now standing at it. */
+  const resetDraft = useCallback(
+    (nextSpecialty: CasterSpecialty | null, characterId: string | null) => {
+      setDraft(
+        blankSpell(
+          nextSpecialty ? formsForSpecialty(nextSpecialty)[1] : 'prayer',
+          nextSpecialty,
+          characterId,
+        ),
+      )
+      setDirty(false)
+      setMode('edit')
+      setArmedComponentId(null)
+    },
+    [],
+  )
+
+  const saveProfile = useCallback(
+    async (label: string, next: PlayerProfile) => {
+      const ok = await write(label, () => repository.saveProfile(next))
+      if (ok) setProfile(next)
+      return ok
+    },
+    [repository, write],
+  )
+
+  const setPlayMode = useCallback(
+    async (next: PlayMode) => {
+      if (next === profile.mode) return
+      // Moving benches picks up whichever character was last stood at, or the
+      // first one, so the player bench is never blank while characters exist.
+      const character =
+        next === 'player'
+          ? characters.find((entry) => entry.id === profile.activeCharacterId) ?? characters[0] ?? null
+          : null
+      const updated: PlayerProfile = {
+        ...profile,
+        mode: next,
+        activeCharacterId: next === 'player' ? character?.id ?? null : profile.activeCharacterId,
+      }
+      const ok = await saveProfile('Could not change bench', updated)
+      if (!ok) return
+      // The working on the bench belongs to the bench it was started at.
+      resetDraft(
+        next === 'player' ? character?.specialty ?? null : profile.specialty,
+        character?.id ?? null,
+      )
+    },
+    [characters, profile, resetDraft, saveProfile],
+  )
+
+  const selectCharacter = useCallback(
+    async (id: string | null) => {
+      if (id === profile.activeCharacterId && profile.mode === 'player') return
+      const character = id ? characters.find((entry) => entry.id === id) ?? null : null
+      if (id && !character) return
+      const ok = await saveProfile('Could not take up that character', {
+        ...profile,
+        mode: 'player',
+        activeCharacterId: character?.id ?? null,
+      })
+      if (!ok) return
+      resetDraft(character?.specialty ?? null, character?.id ?? null)
+    },
+    [characters, profile, resetDraft, saveProfile],
+  )
+
+  const createCharacter = useCallback(
+    async (name: string, characterSpecialty: CasterSpecialty, level: CasterLevel) => {
+      const now = Date.now()
+      const character: Character = {
+        id: newId(),
+        name: name.trim() || 'Unnamed caster',
+        specialty: characterSpecialty,
+        level,
+        // A satchel starts empty. Reagents are taken from the pool by hand.
+        inventory: {},
+        createdAt: now,
+        updatedAt: now,
+      }
+      const ok = await write('Could not enrol the character', () =>
+        repository.saveCharacter(character),
+      )
+      if (!ok) return false
+
+      setCharacters((current) => [...current, character].sort(byCharacterName))
+      // Enrolling stands the player bench at the new character, whichever bench
+      // the button was pressed from.
+      const saved = await saveProfile('Could not take up that character', {
+        ...profile,
+        mode: 'player',
+        activeCharacterId: character.id,
+      })
+      if (saved) resetDraft(character.specialty, character.id)
+      return true
+    },
+    [profile, repository, resetDraft, saveProfile, write],
+  )
+
+  /**
+   * Name and level only. A character's discipline is fixed at creation — see
+   * `Character` — and `chooseSpecialty` refuses in player mode for the same
+   * reason, so there is deliberately no path here that would change it.
+   */
+  const updateCharacter = useCallback(
+    async (id: string, patch: { name?: string; level?: CasterLevel }) => {
+      const existing = characters.find((entry) => entry.id === id)
+      if (!existing) return false
+      const next: Character = {
+        ...existing,
+        name: patch.name !== undefined ? patch.name.trim() || existing.name : existing.name,
+        level: patch.level ?? existing.level,
+        updatedAt: Date.now(),
+      }
+      const ok = await write('Could not amend the character', () => repository.saveCharacter(next))
+      if (!ok) return false
+      setCharacters((current) =>
+        current.map((entry) => (entry.id === id ? next : entry)).sort(byCharacterName),
+      )
+      return true
+    },
+    [characters, repository, write],
+  )
+
+  /**
+   * Strikes a character and everything only it held — its shelf and its satchel,
+   * which the repository sweeps in the same write. The local shelf is filtered by
+   * the same id the query matched on, so state and storage shed the same rites.
+   */
+  const deleteCharacter = useCallback(
+    async (id: string) => {
+      const ok = await write('Could not strike the character', () => repository.deleteCharacter(id))
+      if (!ok) return false
+
+      const remaining = characters.filter((entry) => entry.id !== id)
+      setCharacters(remaining)
+      setAllSpells((current) => current.filter((spell) => spell.characterId !== id))
+
+      // A working on the bench belonging to the struck caster has just lost its
+      // author, whether or not the bench was standing there.
+      const strandedDraft = draft.characterId === id
+
+      if (profile.activeCharacterId !== id) {
+        if (strandedDraft) resetDraft(specialty, activeCharacter?.id ?? null)
+        return true
+      }
+
+      // The bench was standing at the struck character, so it steps to whoever
+      // is left rather than reading a shelf that no longer has an owner.
+      const next = remaining[0] ?? null
+      const saved = await saveProfile('Could not take up that character', {
+        ...profile,
+        activeCharacterId: next?.id ?? null,
+      })
+      if (saved) resetDraft(next?.specialty ?? null, next?.id ?? null)
+      return true
+    },
+    [
+      activeCharacter?.id,
+      characters,
+      draft.characterId,
+      profile,
+      repository,
+      resetDraft,
+      saveProfile,
+      specialty,
+      write,
+    ],
+  )
+
+  /** Writes the active character's satchel, given the whole next stock. */
+  const setInventory = useCallback(
+    async (label: string, inventory: ReagentStock) => {
+      if (!activeCharacter) return false
+      const next: Character = { ...activeCharacter, inventory, updatedAt: Date.now() }
+      const ok = await write(label, () => repository.saveCharacter(next))
+      if (!ok) return false
+      setCharacters((current) => current.map((entry) => (entry.id === next.id ? next : entry)))
+      return true
+    },
+    [activeCharacter, repository, write],
+  )
+
+  const takeReagent = useCallback(
+    async (componentId: string, quantity = 1) => {
+      if (!activeCharacter) return
+      const wanted = Math.floor(quantity)
+      if (!Number.isFinite(wanted) || wanted < 1) return
+      const held = stockCount(activeCharacter.inventory, componentId)
+      // `withStock` holds the ceiling, so a take that would overflow simply
+      // lands on it and this only has to notice that nothing moved.
+      const next = withStock(activeCharacter.inventory, componentId, held + wanted)
+      if (stockCount(next, componentId) === held) return
+      await setInventory('Could not take that reagent', next)
+    },
+    [activeCharacter, setInventory],
+  )
+
+  /** Puts back the stated number, or the whole stack when none is stated. */
+  const dropReagent = useCallback(
+    async (componentId: string, quantity?: number) => {
+      if (!activeCharacter) return
+      const held = stockCount(activeCharacter.inventory, componentId)
+      if (held === 0) return
+      const giving = quantity === undefined ? held : Math.max(1, Math.floor(quantity))
+      const inventory = withStock(activeCharacter.inventory, componentId, held - giving)
+      const ok = await setInventory('Could not put that reagent back', inventory)
+      if (ok && stockCount(inventory, componentId) === 0) {
+        setArmedComponentId((current) => (current === componentId ? null : current))
+      }
+    },
+    [activeCharacter, setInventory],
+  )
+
+  /**
+   * Speaks an inscribed rite and spends what it stood on.
+   *
+   * **The only thing in the app that decrements a satchel.** Writing costs
+   * nothing — see `lib/casting.ts` — so a working may be drafted against
+   * reagents the caster does not own, and refused only here. What a met dirge
+   * preserves is required in hand but not spent, which is the clause
+   * `Reaction.keptSlots` was built for and what the circle already promises.
+   */
+  const castSpell = useCallback(
+    async (spellId: string): Promise<CastOutcome | null> => {
+      const spell = allSpells.find((entry) => entry.id === spellId)
+      if (!spell) return null
+      if (!activeCharacter) {
+        setError('Only an enrolled caster can speak a rite.')
+        return null
+      }
+      const cast = resolvePlacements(spell.slots, componentsById)
+      if (cast.length === 0) {
+        setError('An empty circle has nothing to speak.')
+        return null
+      }
+      const resolved = computeReaction(cast, spell.form, spell.casterLevel, false, spell.specialty)
+      const cost = castingCost(cast, resolved.keptSlots)
+      const short = missingReagents(cost, activeCharacter.inventory, componentsById)
+      if (short.length > 0) {
+        setError(
+          `${activeCharacter.name} does not carry ${short
+            .map((entry) => `${entry.component.name} (${entry.carried} of ${entry.needed})`)
+            .join(', ')}.`,
+        )
+        return null
+      }
+
+      const spentTotal = spentCount(cost)
+      const ok = await setInventory(
+        'Could not spend the reagents',
+        stockAfterCasting(activeCharacter.inventory, cost),
+      )
+      if (!ok) return null
+
+      return {
+        manifestationTotal: resolved.manifestationTotal,
+        tollTotal: resolved.tollTotal,
+        spentTotal,
+        keptTotal: resolved.keptSlots.length,
+      }
+    },
+    [activeCharacter, allSpells, componentsById, setInventory],
   )
 
   const chooseSpecialty = useCallback(
-    async (specialty: CasterSpecialty) => {
-      if (profile.specialty === specialty) return true
-      const next: PlayerProfile = { specialty }
-      const ok = await write('Could not choose your discipline', () => repository.saveProfile(next))
+    async (nextSpecialty: CasterSpecialty) => {
+      // A character trains one discipline and keeps it. Refused in state as well
+      // as hidden in the markup, since this is the rule player mode exists for.
+      if (playMode === 'player') {
+        setError('A caster keeps the discipline they trained in. Enrol another character instead.')
+        return false
+      }
+      if (profile.specialty === nextSpecialty) return true
+      const ok = await saveProfile('Could not choose your discipline', {
+        ...profile,
+        specialty: nextSpecialty,
+      })
       if (!ok) return false
-      setProfile(next)
       // An unsaved rite belongs to the discipline currently chosen. An
       // inscribed rite keeps its historical form, even after its caster trains
       // in a different discipline.
-      if (!spells.some((spell) => spell.id === draft.id)) {
-        setDraft(blankSpell(formsForSpecialty(specialty)[1], specialty))
-        setDirty(false)
-      }
+      if (!draftIsInscribed) resetDraft(nextSpecialty, null)
       return true
     },
-    [draft.id, profile.specialty, repository, spells, write],
+    [draftIsInscribed, playMode, profile, resetDraft, saveProfile],
   )
 
   const placements = useMemo(
@@ -175,6 +544,11 @@ export function WorkshopProvider({
 
   const placeComponent = useCallback(
     (slotIndex: number, componentId: string) => {
+      // Same belt-and-braces as `patchSlots`: a drag begun before the catalog
+      // or the satchel changed can still land here. Nothing the catalog cannot
+      // resolve may stand in a slot, and a player lays only what they carry.
+      if (!componentsById.has(componentId)) return
+      if (playMode === 'player' && stockCount(inventory, componentId) === 0) return
       patchSlots((slots) => {
         // A circle admits each material once: lift it from wherever else it stood
         // rather than duplicate it, or the strongest ring is eight of one reagent.
@@ -211,7 +585,7 @@ export function WorkshopProvider({
       })
       setArmedComponentId(null)
     },
-    [patchSlots, componentsById, draft.form, draft.specialty],
+    [patchSlots, playMode, inventory, componentsById, draft.form, draft.specialty],
   )
 
   const clearSlot = useCallback(
@@ -239,18 +613,28 @@ export function WorkshopProvider({
     (patch: Partial<Omit<Spell, 'id' | 'createdAt'>>) => {
       if (mode === 'view') return
       if (patch.form && !allowedForms.includes(patch.form)) return
+      // A working may be set to the caster's own scale or any lesser one.
+      if (patch.casterLevel && patch.casterLevel > maxCasterLevel) return
       setDraft((current) => ({ ...current, ...patch }))
       setDirty(true)
     },
-    [allowedForms, mode],
+    [allowedForms, maxCasterLevel, mode],
   )
 
   const editDraft = useCallback(() => setMode('edit'), [])
 
   const saveDraft = useCallback(async () => {
-    const isNew = !spells.some((spell) => spell.id === draft.id)
-    if (!profile.specialty || (isNew && !allowedForms.includes(draft.form))) {
+    const isNew = !draftIsInscribed
+    if (!specialty || (isNew && !allowedForms.includes(draft.form))) {
       setError('Choose a discipline before inscribing a new working.')
+      return
+    }
+    if (playMode === 'player' && !activeCharacter) {
+      setError('Enrol a character before inscribing a working.')
+      return
+    }
+    if (draft.casterLevel > maxCasterLevel) {
+      setError(`This caster works at scale ${maxCasterLevel} or below.`)
       return
     }
     const sourceCount = placements.filter((placement) => describeRole(placement.component) === 'source').length
@@ -264,12 +648,15 @@ export function WorkshopProvider({
     const saved: Spell = {
       ...draft,
       title: draft.title.trim() || 'Untitled rite',
+      // A new working is stamped with the caster who wrote it; an existing one
+      // keeps the shelf it was inscribed on.
+      characterId: isNew ? activeCharacter?.id ?? null : draft.characterId,
       updatedAt: Date.now(),
     }
     const ok = await write('Could not inscribe the working', () => repository.saveSpell(saved))
     if (!ok) return
 
-    setSpells((current) => {
+    setAllSpells((current) => {
       const index = current.findIndex((spell) => spell.id === saved.id)
       const next = index === -1 ? [...current, saved] : current.map((s) => (s.id === saved.id ? saved : s))
       return next.sort(byUpdatedDesc)
@@ -279,15 +666,23 @@ export function WorkshopProvider({
     // Inscribing finishes the working, so the bench falls back to reading it.
     setMode('view')
     setArmedComponentId(null)
-  }, [allowedForms, draft, placements, profile.specialty, repository, spells, write])
+  }, [
+    activeCharacter,
+    allowedForms,
+    draft,
+    draftIsInscribed,
+    maxCasterLevel,
+    placements,
+    playMode,
+    repository,
+    specialty,
+    write,
+  ])
 
   const newSpell = useCallback(() => {
-    if (!profile.specialty) return
-    setDraft(blankSpell(formsForSpecialty(profile.specialty)[1], profile.specialty))
-    setDirty(false)
-    setMode('edit')
-    setArmedComponentId(null)
-  }, [profile.specialty])
+    if (!specialty) return
+    resetDraft(specialty, activeCharacter?.id ?? null)
+  }, [activeCharacter?.id, resetDraft, specialty])
 
   const selectSpell = useCallback(
     (id: string) => {
@@ -306,24 +701,17 @@ export function WorkshopProvider({
       const ok = await write('Could not strike the working', () => repository.deleteSpell(id))
       if (!ok) return
 
-      setSpells((current) => current.filter((spell) => spell.id !== id))
-      if (draft.id === id) {
-        setDraft(
-          blankSpell(
-            profile.specialty ? formsForSpecialty(profile.specialty)[1] : 'prayer',
-            profile.specialty,
-          ),
-        )
-        setDirty(false)
-        setMode('edit')
-      }
+      setAllSpells((current) => current.filter((spell) => spell.id !== id))
+      if (draft.id === id) resetDraft(specialty, activeCharacter?.id ?? null)
     },
-    [draft.id, profile.specialty, repository, write],
+    [activeCharacter?.id, draft.id, repository, resetDraft, specialty, write],
   )
 
   /** Resolves to false when the write failed, so the editor can stay open on its draft. */
   const upsertComponent = useCallback(
     async (input: ComponentDraft, id?: string) => {
+      // The catalog is the sandbox's to write. A player draws on it.
+      if (!canAuthorComponents) return false
       const now = Date.now()
       const existing = id ? componentsById.get(id) : undefined
       const component: MaterialComponent = {
@@ -350,11 +738,12 @@ export function WorkshopProvider({
       })
       return true
     },
-    [componentsById, repository, write],
+    [canAuthorComponents, componentsById, repository, write],
   )
 
   const deleteComponent = useCallback(
     async (id: string) => {
+      if (!canAuthorComponents) return
       const ok = await write('Could not discard the component', () =>
         repository.deleteComponent(id),
       )
@@ -362,6 +751,10 @@ export function WorkshopProvider({
 
       setComponents((current) => current.filter((component) => component.id !== id))
       setArmedComponentId((current) => (current === id ? null : current))
+
+      // A satchel still naming it is left alone: `placeableComponents` resolves
+      // ids through the catalog, so a discarded reagent drops out of every
+      // character's satchel on its own rather than needing a write apiece.
 
       // Clearing the deleted component out of the draft is a real edit, so it
       // marks the draft dirty rather than leaving it reading "Saved" over a
@@ -374,7 +767,7 @@ export function WorkshopProvider({
         setDirty(true)
       }
     },
-    [draft.slots, repository, write],
+    [canAuthorComponents, draft.slots, repository, write],
   )
 
   const value: WorkshopValue = useMemo(
@@ -383,12 +776,29 @@ export function WorkshopProvider({
       error,
       dismissError,
       profile,
+      playMode,
+      setPlayMode,
+      characters,
+      activeCharacter,
+      selectCharacter,
+      createCharacter,
+      updateCharacter,
+      deleteCharacter,
+      takeReagent,
+      dropReagent,
+      inventory,
+      castSpell,
+      specialty,
       allowedForms,
       chooseSpecialty,
+      maxCasterLevel,
       components,
+      placeableComponents,
+      canAuthorComponents,
       componentsById,
       spells,
       draft,
+      draftIsInscribed,
       dirty,
       mode,
       editDraft,
@@ -412,12 +822,29 @@ export function WorkshopProvider({
       error,
       dismissError,
       profile,
+      playMode,
+      setPlayMode,
+      characters,
+      activeCharacter,
+      selectCharacter,
+      createCharacter,
+      updateCharacter,
+      deleteCharacter,
+      takeReagent,
+      dropReagent,
+      inventory,
+      castSpell,
+      specialty,
       allowedForms,
       chooseSpecialty,
+      maxCasterLevel,
       components,
+      placeableComponents,
+      canAuthorComponents,
       componentsById,
       spells,
       draft,
+      draftIsInscribed,
       dirty,
       mode,
       editDraft,

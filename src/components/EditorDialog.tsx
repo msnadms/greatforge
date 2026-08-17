@@ -5,10 +5,18 @@ interface EditorDialogProps {
   /** Heading, and the dialog's accessible name unless `ariaLabel` says otherwise. */
   title: string
   ariaLabel?: string
+  /** Extra class on the dialog box, for a shell that needs a different width. */
+  className?: string
   /** Shown above the actions. Null draws nothing. */
   error: string | null
   onClose: () => void
-  onSubmit: (event: FormEvent) => void
+  /**
+   * Omitted for a dialog whose body is not one form. The box is then a `div`
+   * rather than a `form`, which is the only structural difference between the
+   * two editors and the groups dialog — that one holds several forms answering
+   * separately, so it can have no single submit of its own.
+   */
+  onSubmit?: (event: FormEvent) => void
   /**
    * The footer's buttons, in the order they should read. Supplied whole rather
    * than assembled here: the two editors differ in what stands beside Cancel
@@ -19,8 +27,8 @@ interface EditorDialogProps {
 }
 
 /**
- * The shell both editors are written into: the scrim, the form, the heading,
- * the error line and the footer row.
+ * The shell every dialog in the app is written into: the scrim, the box, the
+ * heading, the error line and the footer row.
  *
  * **Portalled to the document, whatever opens it.** A transformed ancestor
  * becomes the containing block for `position: fixed`, so an overlay rendered
@@ -32,16 +40,19 @@ interface EditorDialogProps {
 export function EditorDialog({
   title,
   ariaLabel,
+  className,
   error,
   onClose,
   onSubmit,
   actions,
   children,
 }: EditorDialogProps) {
+  const Box = onSubmit ? 'form' : 'div'
+
   return createPortal(
     <div className="overlay" onClick={onClose} role="presentation">
-      <form
-        className="editor"
+      <Box
+        className={className ? `editor ${className}` : 'editor'}
         onSubmit={onSubmit}
         onClick={(event) => event.stopPropagation()}
         onKeyDown={(event) => {
@@ -58,7 +69,7 @@ export function EditorDialog({
         {error && <p className="editor__error">{error}</p>}
 
         <div className="editor__actions">{actions}</div>
-      </form>
+      </Box>
     </div>,
     document.body,
   )

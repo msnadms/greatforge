@@ -32,31 +32,57 @@ import {
   type LossRelief,
   type MaterialComponent,
   type Placement,
+  type Rarity,
   type SpellForm,
 } from '../types/worldbuilding'
 
-/** Scales a ledger's amounts by `LEVEL_POWER[level]`, dropping anything that rounds to zero. */
-function scaleLedger(ledger: Ledger, level: CasterLevel, round: (n: number) => number): Ledger {
-  const normalized = normalizeLedger(ledger)
+/**
+ * A ledger as a caster at this level can actually command it: normalized, then
+ * scaled by `LEVEL_POWER[level]` to the nearest unit, dropping anything that
+ * rounds to zero.
+ *
+ * `rarity` is the owning material's, and is only here because the ceiling a
+ * ledger is normalized against is a fact about the material — a singular one is
+ * clamped far higher, so normalizing without it would cut one back to 24 on the
+ * way to the walk. Which is why callers holding a whole reagent should reach for
+ * `componentForCaster` instead of splitting one apart to call this.
+ */
+function ledgerForCaster(ledger: Ledger, level: CasterLevel, rarity: Rarity): Ledger {
+  const normalized = normalizeLedger(ledger, rarity)
   const power = LEVEL_POWER[level]
   if (power >= 1) return normalized
   const scaled: Ledger = {}
   for (const [currency, amount] of ledgerEntries(normalized)) {
-    const next = round(amount * power)
+    const next = Math.round(amount * power)
     if (next > 0) scaled[currency] = next
   }
   return scaled
 }
 
+/** A reagent's two ledgers as this caster commands them. */
+export interface CasterLedgers {
+  demands: Ledger
+  yields: Ledger
+}
+
 /**
- * A ledger as a caster at this level can actually command it: normalized, then
- * demand and yield scaled by `LEVEL_POWER[level]` to the nearest unit. Exported
- * (not just used internally by `computeReaction`) because `ComponentTray`,
- * `ComponentSlot` and `DragLayer` need the same scaled numbers to show a
- * reagent card truthfully at the caster's current level.
+ * Both of a reagent's ledgers, scaled together for one caster.
+ *
+ * Exported (not just used internally by `computeReaction`) because
+ * `ComponentTray`, `ComponentSlot` and `DragLayer` each need exactly this pair to
+ * show a reagent card truthfully at the working's level. It takes the whole
+ * material rather than two ledgers and a rarity so that the next fact about a
+ * material the scaling depends on costs one edit here instead of one at every
+ * call site.
  */
-export function ledgerForCaster(ledger: Ledger, level: CasterLevel): Ledger {
-  return scaleLedger(ledger, level, Math.round)
+export function componentForCaster(
+  component: MaterialComponent,
+  level: CasterLevel,
+): CasterLedgers {
+  return {
+    demands: ledgerForCaster(component.demands, level, component.rarity),
+    yields: ledgerForCaster(component.yields, level, component.rarity),
+  }
 }
 
 export interface SlotReport {
@@ -308,14 +334,14 @@ function resolveReaction(
       : conditionReliefForAssumption(form, placements, specialty, assumedConditionMet)
   const metTransit = relief.met ? conditionFor(form, specialty)?.metTransit : undefined
   const transitFactor = transitScale(relief.transit)
-  const demandForCaster = (ledger: Ledger): Ledger => scaleLedger(ledger, level, Math.round)
-  const yieldForCaster = (ledger: Ledger): Ledger => scaleLedger(ledger, level, Math.round)
-
   const byIndex = new Map(placements.map((p) => [p.slotIndex, p.component]))
   /** Demands as this caster can command them, keyed by slot. The walk asks for
    * these, and so does `crossInto`. */
   const demandsBySlot = new Map(
-    placements.map((p) => [p.slotIndex, demandForCaster(p.component.demands)]),
+    placements.map((p) => [
+      p.slotIndex,
+      ledgerForCaster(p.component.demands, level, p.component.rarity),
+    ]),
   )
   const parcels: Parcel[] = []
   const reports = new Map<number, SlotReport>()
@@ -556,7 +582,7 @@ function resolveReaction(
     }
 
     const demands = demandsBySlot.get(slotIndex) ?? {}
-    const yields = yieldForCaster(component.yields)
+    const yields = ledgerForCaster(component.yields, level, component.rarity)
 
     const report: SlotReport = {
       slotIndex,

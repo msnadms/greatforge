@@ -1,6 +1,7 @@
 import { FirebaseError } from 'firebase/app'
 import type { User } from 'firebase/auth'
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { describeError } from '../lib/describeError'
 import { signInWithGoogle, signOutOfWorkshop, watchUser } from '../lib/firebase'
 import { AuthContext, type AuthValue } from './authContext'
 
@@ -24,7 +25,7 @@ function describe(error: unknown): string | null {
       return 'This domain is not in the Firebase project’s authorized list.'
     }
   }
-  return error instanceof Error ? error.message : String(error)
+  return describeError(error)
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { describeError } from '../lib/describeError'
 import { firestoreRepository } from '../lib/firestoreRepository'
 import { newId } from '../lib/id'
 import type { WorkshopRepository } from '../lib/repository'
@@ -31,6 +32,7 @@ import {
   type ComponentDraft,
   type WorkshopValue,
 } from './workshopContext'
+import { useWrite } from './useWrite'
 
 function blankSpell(
   form: SpellForm = 'prayer',
@@ -65,19 +67,26 @@ function byCharacterName(a: Character, b: Character): number {
   return a.name.localeCompare(b.name)
 }
 
-function describe(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 interface WorkshopProviderProps {
   children: ReactNode
   /** Overridable so tests can supply a stand-in for Firestore. */
   repository?: WorkshopRepository
+  /**
+   * Whether this bench may read the catalog's singular reagents. `App.tsx` passes
+   * whether the account runs a table.
+   *
+   * A prop rather than a `useGroups()` read: this is the only fact about groups
+   * the workshop has any use for, and taking it as one keeps the provider
+   * mountable on its own, which every preview entry point relies on. Defaults to
+   * hidden, so a caller that never states it cannot leak them.
+   */
+  singularsVisible?: boolean
 }
 
 export function WorkshopProvider({
   children,
   repository = firestoreRepository,
+  singularsVisible = false,
 }: WorkshopProviderProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -131,7 +140,7 @@ export function WorkshopProvider({
         }
       } catch (cause) {
         if (cancelled) return
-        setError(`Could not open the workshop: ${describe(cause)}`)
+        setError(`Could not open the workshop: ${describeError(cause)}`)
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -144,20 +153,33 @@ export function WorkshopProvider({
   const dismissError = useCallback(() => setError(null), [])
 
   /** Applies local state only once a persisted write lands; failures surface via `error`. */
-  const write = useCallback(async (label: string, action: () => Promise<void>) => {
-    try {
-      await action()
-      setError(null)
-      return true
-    } catch (cause) {
-      setError(`${label}: ${describe(cause)}`)
-      return false
-    }
-  }, [])
+  const write = useWrite(setError)
 
   const componentsById = useMemo(
     () => new Map(components.map((component) => [component.id, component])),
     [components],
+  )
+
+  /**
+   * The catalog as this bench may read it. A singular reagent is a game master's
+   * to hand out, so an account running no table sees none — in the sandbox as
+   * well, where the codex is otherwise whole.
+   *
+   * The state list and `componentsById` stay whole either way, because a reagent
+   * already standing in an inscribed rite is still resolved through them: putting
+   * a material out of reach must not blank a circle written while it was in hand.
+   */
+  const catalog = useMemo(
+    () =>
+      singularsVisible
+        ? components
+        : components.filter((component) => component.rarity !== 'singular'),
+    [components, singularsVisible],
+  )
+
+  const catalogById = useMemo(
+    () => new Map(catalog.map((component) => [component.id, component])),
+    [catalog],
   )
 
   const playMode = profile.mode
@@ -189,17 +211,18 @@ export function WorkshopProvider({
 
   /**
    * What may be laid in the circle. In player mode that is the satchel, resolved
-   * through the catalog so an id left behind by a withdrawn seed simply drops
-   * out rather than drawing an empty row.
+   * through the catalog this bench may read, so an id left behind by a withdrawn
+   * seed — or by a singular the account can no longer reach — simply drops out
+   * rather than drawing an empty row.
    */
   const placeableComponents = useMemo(() => {
-    if (playMode !== 'player') return components
+    if (playMode !== 'player') return catalog
     if (!activeCharacter) return []
     return Object.keys(activeCharacter.inventory)
-      .map((id) => componentsById.get(id))
+      .map((id) => catalogById.get(id))
       .filter((component): component is MaterialComponent => Boolean(component))
       .sort(byName)
-  }, [activeCharacter, components, componentsById, playMode])
+  }, [activeCharacter, catalog, catalogById, playMode])
 
   /** The active character's satchel, or nothing carried at the sandbox bench. */
   const inventory: ReagentStock = useMemo(
@@ -553,9 +576,10 @@ export function WorkshopProvider({
   const placeComponent = useCallback(
     (slotIndex: number, componentId: string) => {
       // Same belt-and-braces as `patchSlots`: a drag begun before the catalog
-      // or the satchel changed can still land here. Nothing the catalog cannot
-      // resolve may stand in a slot, and a player lays only what they carry.
-      if (!componentsById.has(componentId)) return
+      // or the satchel changed can still land here. Nothing this bench cannot
+      // read may stand in a slot — a singular put out of reach mid-drag
+      // included — and a player lays only what they carry.
+      if (!catalogById.has(componentId)) return
       if (playMode === 'player' && stockCount(inventory, componentId) === 0) return
       patchSlots((slots) => {
         // A circle admits each material once: lift it from wherever else it stood
@@ -593,7 +617,7 @@ export function WorkshopProvider({
       })
       setArmedComponentId(null)
     },
-    [patchSlots, playMode, inventory, componentsById, draft.form, draft.specialty],
+    [patchSlots, playMode, inventory, catalogById, componentsById, draft.form, draft.specialty],
   )
 
   const clearSlot = useCallback(
@@ -720,6 +744,12 @@ export function WorkshopProvider({
     async (input: ComponentDraft, id?: string) => {
       // The catalog is the sandbox's to write. A player draws on it.
       if (!canAuthorComponents) return false
+      // And a singular reagent is a game master's, which is the same rule that
+      // keeps one out of a codex this account may not read.
+      if (input.rarity === 'singular' && !singularsVisible) {
+        setError('A singular reagent is a game master’s to write.')
+        return false
+      }
       const now = Date.now()
       const existing = id ? componentsById.get(id) : undefined
       const component: MaterialComponent = {
@@ -746,7 +776,7 @@ export function WorkshopProvider({
       })
       return true
     },
-    [canAuthorComponents, componentsById, repository, write],
+    [canAuthorComponents, componentsById, repository, singularsVisible, write],
   )
 
   const deleteComponent = useCallback(
@@ -801,9 +831,10 @@ export function WorkshopProvider({
       allowedForms,
       chooseSpecialty,
       maxCasterLevel,
-      components,
+      components: catalog,
       placeableComponents,
       canAuthorComponents,
+      singularsVisible,
       componentsById,
       spells,
       draft,
@@ -848,9 +879,10 @@ export function WorkshopProvider({
       allowedForms,
       chooseSpecialty,
       maxCasterLevel,
-      components,
+      catalog,
       placeableComponents,
       canAuthorComponents,
+      singularsVisible,
       componentsById,
       spells,
       draft,

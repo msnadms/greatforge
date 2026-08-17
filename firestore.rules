@@ -2,10 +2,59 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
-    // A workshop belongs to exactly one (anonymous) signed-in user: their profile doc
-    // plus the components and spells beneath it. Nobody else can read or write it.
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // A user's profile, characters, components and spells are private to that uid.
     match /users/{uid}/{document=**} {
-      allow read, write: if request.auth != null && request.auth.uid == uid;
+      allow read, write: if signedIn() && request.auth.uid == uid;
+    }
+
+    // Only the game master can read or write a group, and gameMasterUid is immutable.
+    match /groups/{groupId} {
+      function masterOfThis() {
+        return resource.data.gameMasterUid == request.auth.uid;
+      }
+
+      allow read, delete: if signedIn() && masterOfThis();
+      allow create: if signedIn() && request.resource.data.gameMasterUid == request.auth.uid;
+      allow update: if signedIn() && masterOfThis()
+        && request.resource.data.gameMasterUid == resource.data.gameMasterUid;
+    }
+
+    // One doc per invited address, id `{groupId}:{email}`, so re-inviting overwrites.
+    match /memberships/{membershipId} {
+      function mastered() {
+        return resource.data.gameMasterUid == request.auth.uid;
+      }
+      // Stored emails are lowercase; an account without one matches nothing.
+      function addressedToMe() {
+        return request.auth.token.email is string
+          && resource.data.email == request.auth.token.email.lower();
+      }
+
+      // Both tests read a stored field, so the master's gameMasterUid query and the player's email query are provably in-rule.
+      allow read: if signedIn() && (mastered() || addressedToMe());
+
+      // Only the game master creates or deletes an invitation.
+      allow create: if signedIn()
+        && request.resource.data.gameMasterUid == request.auth.uid
+        && request.resource.data.status == 'invited';
+      allow delete: if signedIn() && mastered();
+
+      // The game master may edit their own invitation but not move or readdress it; the invited player may only set their own answer.
+      allow update: if signedIn() && (
+        (mastered()
+          && request.resource.data.gameMasterUid == resource.data.gameMasterUid
+          && request.resource.data.groupId == resource.data.groupId
+          && request.resource.data.email == resource.data.email)
+        || (addressedToMe()
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['status', 'playerUid', 'playerName', 'respondedAt'])
+          && request.resource.data.status in ['joined', 'declined']
+          && request.resource.data.playerUid == request.auth.uid)
+      );
     }
   }
 }

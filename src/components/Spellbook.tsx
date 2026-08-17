@@ -230,7 +230,7 @@ function BookView() {
         {draft.text ? (
           <p className="book__viewText">{draft.text}</p>
         ) : unwrittenText ? (
-          <p className="book__viewText book__viewText--generated">{unwrittenText}</p>
+          <p className="book__viewText">{unwrittenText}</p>
         ) : (
           <p className="book__viewText book__viewText--none">No words were written for this one.</p>
         )}

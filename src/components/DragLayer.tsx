@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties } from 'react'
 import { componentHue } from '../data/currencies'
-import { ledgerForCaster } from '../lib/reaction'
+import { componentForCaster } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import { LedgerLine } from './LedgerLine'
@@ -17,13 +17,7 @@ export function DragLayer() {
   // Memoized since `preview` changes on every pointermove but the component
   // and its level don't.
   const scaled = useMemo(
-    () =>
-      component
-        ? {
-            demands: ledgerForCaster(component.demands, draft.casterLevel),
-            yields: ledgerForCaster(component.yields, draft.casterLevel),
-          }
-        : null,
+    () => (component ? componentForCaster(component, draft.casterLevel) : null),
     [component, draft.casterLevel],
   )
 

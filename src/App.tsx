@@ -1,5 +1,6 @@
 import { AccountBadge } from './components/AccountBadge'
 import { ComponentTray } from './components/ComponentTray'
+import { GroupsButton } from './components/GroupsButton'
 import { ReactionPanel } from './components/ReactionPanel'
 import { SignInScreen } from './components/SignInScreen'
 import { SpellCircle } from './components/SpellCircle'
@@ -10,7 +11,9 @@ import { BenchToggle, CasterBar } from './components/CasterBar'
 import { CastButton } from './components/CastButton'
 import { AuthProvider } from './state/AuthProvider'
 import { DragProvider } from './state/DragProvider'
+import { GroupsProvider } from './state/GroupsProvider'
 import { useAuth } from './state/useAuth'
+import { useGroups } from './state/useGroups'
 import { useWorkshop } from './state/useWorkshop'
 import { WorkshopProvider } from './state/WorkshopProvider'
 import './App.css'
@@ -59,6 +62,8 @@ function Workshop() {
               whole workshop rather than on the working in front of it. */}
           <div className="workshop__account">
             <BenchToggle />
+            {/* A group belongs to the account, the same as signing out does. */}
+            <GroupsButton />
             <AccountBadge />
           </div>
         </header>
@@ -87,6 +92,23 @@ function Workshop() {
   )
 }
 
+/**
+ * The one thing the two providers share, and it crosses here rather than through
+ * a context read: singular reagents are a game master's to hand out, so the
+ * workshop is told whether this account runs a table and knows nothing else about
+ * groups. `WorkshopProvider` still mounts on its own, which the preview entry
+ * points rely on.
+ */
+function Bench() {
+  const { mastersATable } = useGroups()
+
+  return (
+    <WorkshopProvider singularsVisible={mastersATable}>
+      <Workshop />
+    </WorkshopProvider>
+  )
+}
+
 function Gate() {
   const { user, ready } = useAuth()
 
@@ -97,10 +119,16 @@ function Gate() {
 
   // Keyed by uid so signing in as someone else builds a fresh workshop rather than
   // showing the previous account's components until the reload finishes.
+  // Groups sit beside the workshop rather than inside it: they share no state,
+  // and nothing in the resolver has heard of them.
+  //
+  // Both carry the key themselves rather than inheriting one from a parent. The
+  // guarantee is each provider's own, so reordering them, or dropping one, cannot
+  // quietly leave the other leaking the previous account's records.
   return (
-    <WorkshopProvider key={user.uid}>
-      <Workshop />
-    </WorkshopProvider>
+    <GroupsProvider key={user.uid}>
+      <Bench key={user.uid} />
+    </GroupsProvider>
   )
 }
 

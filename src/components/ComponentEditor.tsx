@@ -4,10 +4,10 @@ import { useWorkshop } from '../state/useWorkshop'
 import type { ComponentDraft } from '../state/workshopContext'
 import { EditorDialog } from './EditorDialog'
 import {
-  MAX_LEDGER_ENTRY,
   RARITIES,
   ledgerAmount,
   ledgerTotal,
+  maxLedgerEntry,
   normalizeLedger,
   type Currency,
   type MaterialComponent,
@@ -33,7 +33,7 @@ interface ComponentEditorProps {
 }
 
 export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
-  const { upsertComponent } = useWorkshop()
+  const { upsertComponent, singularsVisible } = useWorkshop()
   const [draft, setDraft] = useState<ComponentDraft>(() => initialDraft(component))
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
@@ -41,9 +41,21 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
   const inert = isInert(draft)
   const role = describeRole(draft)
 
+  // A singular reagent is a game master's to write, so the step is dropped rather
+  // than offered and refused. Kept when the reagent already carries it, or the
+  // select would open on a blank.
+  const rarities = RARITIES.filter(
+    (rarity) => rarity !== 'singular' || singularsVisible || draft.rarity === 'singular',
+  )
+
   function setEntry(side: LedgerSide, currency: Currency, raw: string) {
-    const amount = Math.min(MAX_LEDGER_ENTRY, Math.max(0, Math.round(Number(raw) || 0)))
     setDraft((current) => {
+      // Read the ceiling off the draft's own rarity rather than the render's, so
+      // a value typed straight after switching to singular is not cut to 24.
+      const amount = Math.min(
+        maxLedgerEntry(current.rarity),
+        Math.max(0, Math.round(Number(raw) || 0)),
+      )
       const next = { ...current[side] }
       if (amount > 0) next[currency] = amount
       else delete next[currency]
@@ -68,8 +80,8 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
         ...draft,
         name: draft.name.trim(),
         // Normalized here as well as on read, so a stray value never reaches storage.
-        demands: normalizeLedger(draft.demands),
-        yields: normalizeLedger(draft.yields),
+        demands: normalizeLedger(draft.demands, draft.rarity),
+        yields: normalizeLedger(draft.yields, draft.rarity),
       },
       component?.id,
     ).then((saved) => {
@@ -146,7 +158,7 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
                     type="number"
                     className="ledgerGrid__input"
                     min={0}
-                    max={MAX_LEDGER_ENTRY}
+                    max={maxLedgerEntry(draft.rarity)}
                     step={1}
                     value={ledgerAmount(draft[side], meta.currency) || ''}
                     placeholder="0"
@@ -178,9 +190,20 @@ export function ComponentEditor({ component, onClose }: ComponentEditorProps) {
           <span className="field__label">Rarity</span>
           <select
             value={draft.rarity}
-            onChange={(event) => setDraft((c) => ({ ...c, rarity: event.target.value as Rarity }))}
+            onChange={(event) => {
+              const rarity = event.target.value as Rarity
+              // Rarity sets the ledger's ceiling, so stepping down off singular
+              // re-clamps here rather than at the write. The fields then show
+              // the numbers that will actually be stored.
+              setDraft((c) => ({
+                ...c,
+                rarity,
+                demands: normalizeLedger(c.demands, rarity),
+                yields: normalizeLedger(c.yields, rarity),
+              }))
+            }}
           >
-            {RARITIES.map((rarity) => (
+            {rarities.map((rarity) => (
               <option key={rarity} value={rarity}>
                 {rarity[0].toUpperCase() + rarity.slice(1)}
               </option>

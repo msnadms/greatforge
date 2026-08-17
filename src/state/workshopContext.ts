@@ -95,12 +95,18 @@ export interface WorkshopValue {
   /** Highest scale this bench may write at — the character's level, or 5 in sandbox. */
   maxCasterLevel: CasterLevel
 
-  /** The whole catalog, which is what a placed reagent is still resolved from. */
+  /** The catalog as this bench may read it: everything but the singulars, unless it runs a table. */
   components: MaterialComponent[]
   /** What may actually be laid in the circle: the satchel in player mode. */
   placeableComponents: MaterialComponent[]
   /** False in player mode — a player draws on the pool rather than writing it. */
   canAuthorComponents: boolean
+  /**
+   * Whether singular reagents are readable here. A game master's to hand out, so
+   * a codex shows none until this account runs a table — in the sandbox as well.
+   */
+  singularsVisible: boolean
+  /** The whole catalog by id, singulars included. What a placed reagent is resolved from. */
   componentsById: Map<string, MaterialComponent>
   /** The shelf this bench shows: the active character's rites, or the sandbox's. */
   spells: Spell[]

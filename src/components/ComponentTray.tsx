@@ -7,7 +7,7 @@ import {
   describeRole,
   type Role,
 } from '../data/currencies'
-import { ledgerForCaster } from '../lib/reaction'
+import { componentForCaster } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import {
@@ -275,10 +275,7 @@ export function ComponentTray() {
       new Map(
         components.map((component) => [
           component.id,
-          {
-            demands: ledgerForCaster(component.demands, draft.casterLevel),
-            yields: ledgerForCaster(component.yields, draft.casterLevel),
-          },
+          componentForCaster(component, draft.casterLevel),
         ]),
       ),
     [components, draft.casterLevel],

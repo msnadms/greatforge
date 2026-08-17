@@ -15,6 +15,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore'
+import { normalizeEmail } from '../types/groups'
 
 /**
  * Firebase bootstrap. Config comes from `VITE_FIREBASE_*` env vars (see `.env.example`);
@@ -69,4 +70,23 @@ export function requireUid(): string {
   const uid = auth.currentUser?.uid
   if (!uid) throw new Error('Signed out — the workshop is unreachable.')
   return uid
+}
+
+/**
+ * The address this account signed in with, folded to lowercase, or null if the
+ * provider handed over none.
+ *
+ * Groups are addressed by email rather than by uid, since a game master invites
+ * a person before that person's account exists to be named (see
+ * `types/groups.ts`). Nullable rather than required: a missing address costs
+ * this one feature and nothing else, so it is reported where it matters instead
+ * of thrown at the door the way `requireUid` throws.
+ *
+ * Folded through `normalizeEmail` rather than by hand, because the same fold
+ * derives a seat's document id (`membershipId`). Two spellings of it would let
+ * the address a query looks for drift from the address a seat was written under.
+ */
+export function currentEmail(): string | null {
+  const email = auth.currentUser?.email
+  return email ? normalizeEmail(email) : null
 }

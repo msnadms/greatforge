@@ -27,6 +27,7 @@ import {
   type Spell,
 } from '../types/worldbuilding'
 import { db, requireUid } from './firebase'
+import { stripId } from './firestoreDoc'
 import type { WorkshopRepository } from './repository'
 
 /**
@@ -45,13 +46,6 @@ import type { WorkshopRepository } from './repository'
 type StoredComponent = Omit<MaterialComponent, 'id'>
 type StoredSpell = Omit<Spell, 'id'>
 type StoredCharacter = Omit<Character, 'id'>
-
-/** The document id carries the id, so it isn't duplicated inside the document body. */
-function stripId<T extends { id: string }>(entity: T): Omit<T, 'id'> {
-  const rest = { ...entity } as Partial<T>
-  delete rest.id
-  return rest as Omit<T, 'id'>
-}
 
 /**
  * Normalizes a stored record. A component written before the ledger model comes

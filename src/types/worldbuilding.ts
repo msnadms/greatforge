@@ -160,6 +160,22 @@ export function completionFactor(filled: number, spill: LossRelief): number {
 export const MAX_LEDGER_ENTRY = 24
 
 /**
+ * The same ceiling for a `singular` material, which is exempt from it.
+ *
+ * A singular reagent is the one rarity the catalog treats as an exception rather
+ * than a step on a scale, so it is allowed numbers that dwarf a full lap instead
+ * of ones that merely clear it. Nothing in the balance harness moves with this:
+ * `sim/generateNearOptimal.ts` climbs the common and uncommon envelope only, and
+ * the cohorts in `sim/balance.ts` draw from the same pool.
+ */
+export const MAX_LEDGER_ENTRY_SINGULAR = 1000
+
+/** Most of any one currency a material of this rarity may demand or yield. */
+export function maxLedgerEntry(rarity: Rarity | undefined): number {
+  return rarity === 'singular' ? MAX_LEDGER_ENTRY_SINGULAR : MAX_LEDGER_ENTRY
+}
+
+/**
  * How many rungs of power a working can be set to, and the fraction of a
  * reagent's ledger each rung actually commands.
  *
@@ -459,14 +475,20 @@ export function addToLedger(ledger: Ledger, currency: Currency, amount: number):
  * Drops zero, negative, and non-finite entries and clamps the rest to whole
  * numbers in range. Applied on both write and read, so hand-edited documents and
  * components saved before the ledger model existed still load.
+ *
+ * The ceiling is the owning material's, not a constant: a `singular` reagent is
+ * clamped at `MAX_LEDGER_ENTRY_SINGULAR`. The rarity is therefore required at
+ * every call site rather than defaulted, since defaulting it silently cuts a
+ * singular ledger to 24 wherever one is forgotten.
  */
-export function normalizeLedger(ledger: Ledger | undefined): Ledger {
+export function normalizeLedger(ledger: Ledger | undefined, rarity: Rarity | undefined): Ledger {
   const next: Ledger = {}
   if (!ledger) return next
+  const max = maxLedgerEntry(rarity)
   for (const currency of CURRENCIES) {
     const raw = ledger[currency]
     if (typeof raw !== 'number' || !Number.isFinite(raw)) continue
-    const amount = Math.min(MAX_LEDGER_ENTRY, Math.max(0, Math.round(raw)))
+    const amount = Math.min(max, Math.max(0, Math.round(raw)))
     if (amount > 0) next[currency] = amount
   }
   return next
@@ -483,8 +505,8 @@ export function normalizeComponent(input: Partial<MaterialComponent> & { id: str
     id: input.id,
     name: input.name ?? 'Unnamed',
     description: input.description ?? '',
-    demands: normalizeLedger(input.demands),
-    yields: normalizeLedger(input.yields),
+    demands: normalizeLedger(input.demands, input.rarity),
+    yields: normalizeLedger(input.yields, input.rarity),
     rarity: RARITIES.includes(input.rarity as Rarity) ? (input.rarity as Rarity) : 'common',
     isSeed: input.isSeed ?? false,
     createdAt: input.createdAt ?? now,

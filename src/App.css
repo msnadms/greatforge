@@ -972,29 +972,25 @@
   overflow-wrap: anywhere;
 }
 
+/* Words the caster wrote and words the reaction supplies are set the same, so
+   the page reads as one hand whether or not anyone took up the pen. */
 .book__viewText {
   flex: 1 1 auto;
   min-height: 0;
   overflow-y: auto;
   white-space: pre-wrap;
   font-family: var(--hand);
-  font-size: 15px;
+  font-size: 12px;
+  font-style: italic;
   line-height: 1.6;
-  color: var(--text-h);
+  color: var(--rune);
   overflow-wrap: anywhere;
 }
 
+/* The one line that is neither: a note about the page rather than text on it,
+   so it drops the hand. */
 .book__viewText--none {
   font-family: inherit;
-  font-size: 12px;
-  font-style: italic;
-  color: var(--rune);
-}
-
-.book__viewText--generated {
-  font-size: 12px;
-  font-style: italic;
-  color: var(--rune);
 }
 
 /* ------------------------------------------------------------------ reaction */
@@ -2040,6 +2036,131 @@ body.is-dragging * {
 /* Struck off to the left, away from the button the hand goes to. */
 .editor__strike {
   margin-right: auto;
+}
+
+/* ------------------------------------------------------------------- groups */
+
+/* The groups dialog is the editor shell one size wider: it holds rows of two
+   names and three buttons where an editor holds fields. */
+.groups {
+  width: min(560px, 100%);
+  gap: 14px;
+}
+
+.groups__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.groups__heading {
+  font-size: 11px;
+  letter-spacing: 1.2px;
+  text-transform: uppercase;
+  color: var(--rune);
+}
+
+.groups__list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.groups__row,
+.groups__groupHead,
+.groups__seat {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* A table this account runs, roster and all, boxed so its seats read as its own
+   rather than as more rows in the list. */
+.groups__group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.groups__name {
+  font-family: var(--heading);
+  font-size: 15px;
+  color: var(--text-h);
+}
+
+/* Takes the slack, so every button in a row lands on the same right edge. */
+.groups__count {
+  flex: 1 1 auto;
+  font-size: 11px;
+  color: var(--text);
+}
+
+.groups__seats {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.groups__seat {
+  font-size: 12px;
+}
+
+.groups__seatName {
+  color: var(--text-h);
+}
+
+/* The address behind a name that has one. A seat is addressed to an email even
+   after an account answers it, and that is what the master invited. */
+.groups__seatMail {
+  font-size: 11px;
+  color: var(--text);
+}
+
+.groups__status {
+  margin-left: auto;
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--rune);
+}
+
+.groups__status--joined {
+  color: var(--gilt);
+}
+
+.groups__status--declined {
+  color: var(--danger);
+}
+
+/* One field and its button on a line: the invite form, the rename form, and the
+   founding form are all this shape. */
+.groups__inline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.groups__inline input {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.groups__empty,
+.groups__note {
+  font-size: 11px;
+  color: var(--text);
 }
 
 /* --------------------------------------------------------------- responsive */

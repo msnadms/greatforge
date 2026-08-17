@@ -13,8 +13,9 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *   Sources    demand nothing, so they are the only things that can start a
  *              ring. Three within easy reach (spark, weight, lens), one per
  *              currency raisable without already holding something, plus
- *              Pitchblende (`rare`) reaching charge directly. Kept scarce: a
- *              reagent that demands nothing can never be billed.
+ *              Pitchblende (`rare`) reaching charge directly and Ice XV
+ *              (`singular`) doing the same at a hundred times the scale. Kept
+ *              scarce: a reagent that demands nothing can never be billed.
  *   Fuels      take a little and give a little more. Four within easy reach —
  *              one apiece in heat, motion and charge, plus Magnesium Ribbon
  *              carrying heat into light — plus three more at `rare`:
@@ -37,6 +38,10 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              `singular` entry, the Trapped Antiproton, sits outside even
  *              that: a deliberate outlier priced for scarcity of a different
  *              kind — there is one of it, full stop — rather than for balance.
+ *              Blood Iron and Ice VI (both `singular`) run at the abyssal
+ *              scale instead, taking Ice XV's charge round to heat and then to
+ *              motion. The three of them are a whole ring's output in three
+ *              slots, and they only chain into each other.
  *   Relays     give back the whole of what they take, so current crosses them
  *              for nothing — the wire of the circle. One per currency, plus
  *              two that carry a pair at once. What a pair is worth against a
@@ -63,11 +68,17 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *  - Only seven reagents (three sources, four fuels) never cost anything to
  *    place, one short of a full ring — reaching slot VIII always means taking
  *    on at least one converter. Rarity does not track role: seven reagents are
- *    `rare` and three are `singular` — two doing at a single slot what two
+ *    `rare` and six are `singular` — two doing at a single slot what two
  *    `rare` reagents would together, one an outlier kept for being one of a
- *    kind rather than for fitting the curve. See `sim/balance.ts`'s
- *    `naiveChainProbe`, the regression check that a full ring can't be built
- *    on autopilot.
+ *    kind rather than for fitting the curve, and three abyssal entries running
+ *    in the hundreds. See `sim/balance.ts`'s `naiveChainProbe`, the regression
+ *    check that a full ring can't be built on autopilot.
+ *  - `singular` is the one rarity exempt from `MAX_LEDGER_ENTRY`, clamped at
+ *    `MAX_LEDGER_ENTRY_SINGULAR` (1000) instead of 24. Nothing measured moves
+ *    with it: the frontier generator and every cohort in `sim/balance.ts` draw
+ *    from the common and uncommon envelope, so a reagent priced two orders of
+ *    magnitude above the band sits outside every number this catalog is tuned
+ *    against, by construction rather than by luck.
  *
  * These are example data, not fixed rules; they can be edited and deleted like
  * anything the user authors.
@@ -555,12 +566,6 @@ const SEEDS: SeedSpec[] = [
     yields: { mass: 12, charge: 12 },
     rarity: 'singular',
   },
-  // This was a relay asking heat 24 and motion 24 for the same back, and it
-  // measured worse than every common converter in the catalog: a relay is
-  // neutral once it is fed, so scale buys it nothing and only widens what a
-  // shortfall costs. A `singular` slot cannot be spent on a role that has no
-  // ceiling to reach, so it reads as a fuel now — the heat crosses whole and
-  // the jet on top of it is free.
   {
     name: 'Superfluid Helium',
     description:
@@ -576,7 +581,31 @@ const SEEDS: SeedSpec[] = [
     demands: { mass: 2 },
     yields: { heat: 24, motion: 24, charge: 24, light: 24 },
     rarity: 'singular',
-  }
+  },
+  {
+    name: 'Ice VI',
+    description:
+      'Heavy ice formed beneath an ocean so deep that water remains solid despite warmth. Its crystals are denser than the liquid above them and sink rather than float. Given heat through liturgy, they loosen into common water and force themselves violently outward.',
+    demands: { heat: 300 },
+    yields: { motion: 600 },
+    rarity: 'singular',
+  },
+  {
+    name: 'Ice XV',
+    description:
+      'A proton-ordered form of the sixth ice, grown only where the abyss is both cold and under crushing pressure. Its water molecules all lie in a fixed arrangement, giving the crystal opposed electrical faces. Under liturgy, that order collapses at once and the charge runs out through whatever touches it, leaving ordinary Ice VI behind.',
+    demands: {},
+    yields: { charge: 320 },
+    rarity: 'singular',
+  },
+  {
+    name: 'Blood Iron',
+    description:
+      'Dark iron formed where hydrogen from the mantle is forced into the metal under abyssal pressure. Charge drives the hidden hydrogen through the iron faster than the lattice can bear, heating it white at the fractures. Once spent, it leaves porous red iron and a stream of bubbles.',
+    demands: { charge: 320 },
+    yields: { heat: 300 },
+    rarity: 'singular',
+  },
 ]
 
 /**

@@ -1,6 +1,6 @@
 import { useMemo, type CSSProperties } from 'react'
 import { componentHue, describeLedger, describeRole } from '../data/currencies'
-import { ledgerForCaster, type SlotReport } from '../lib/reaction'
+import { componentForCaster, type SlotReport } from '../lib/reaction'
 import { useDrag } from '../state/useDrag'
 import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, ledgerTotal, type MaterialComponent } from '../types/worldbuilding'
@@ -51,10 +51,7 @@ export function ComponentSlot({
   const { demands, yields } = useMemo(
     () =>
       component
-        ? {
-            demands: ledgerForCaster(component.demands, draft.casterLevel),
-            yields: ledgerForCaster(component.yields, draft.casterLevel),
-          }
+        ? componentForCaster(component, draft.casterLevel)
         : { demands: {}, yields: {} },
     [component, draft.casterLevel],
   )

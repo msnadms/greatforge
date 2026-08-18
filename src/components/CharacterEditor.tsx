@@ -30,7 +30,7 @@ interface CharacterEditorProps {
  * A single ✕ in the header read as closing something.
  */
 export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
-  const { createCharacter, updateCharacter, deleteCharacter, activeCharacter, spells } =
+  const { createCharacter, updateCharacter, deleteCharacter, activeCharacter, spells, groupCasterLevel } =
     useWorkshop()
   const [name, setName] = useState(character?.name ?? '')
   const [specialty, setSpecialty] = useState<CasterSpecialty>(character?.specialty ?? 'warden')
@@ -43,6 +43,7 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
   // opened; anything else counts nothing rather than counting the wrong shelf.
   const shelved = character && character.id === activeCharacter?.id ? spells.length : null
   const carried = character ? stockTotal(character.inventory) : 0
+  const effectiveLevel = groupCasterLevel ?? level
 
   /** Closes on a write that landed, and holds the form open on one that did not. */
   function run(action: Promise<boolean>, failure: string) {
@@ -72,7 +73,9 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
       return
     }
     run(
-      character ? updateCharacter(character.id, { name, level }) : createCharacter(name, specialty, level),
+      character
+        ? updateCharacter(character.id, groupCasterLevel === null ? { name, level } : { name })
+        : createCharacter(name, specialty, effectiveLevel),
       'That could not be saved. Your changes are still here.',
     )
   }
@@ -142,9 +145,17 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
       <div className="field">
         <span className="field__label">
           Scale
-          <span className="field__note">Writes rites at this scale or any below it.</span>
+          <span className="field__note">
+            {groupCasterLevel === null
+              ? 'Writes rites at this scale or any below it.'
+              : 'Your game master sets this table level.'}
+          </span>
         </span>
-        <LevelSteps value={level} label="Caster scale" onChange={setLevel} />
+        {groupCasterLevel === null ? (
+          <LevelSteps value={level} label="Caster scale" onChange={setLevel} />
+        ) : (
+          <output className="field__value">Table level {groupCasterLevel}</output>
+        )}
       </div>
     </EditorDialog>
   )

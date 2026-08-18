@@ -7,9 +7,17 @@
  * private to a single uid; only this file's two records cross that line, which
  * is why they hang off the root of the database rather than under `users/{uid}`.
  *
- * No React, no storage, and no reference to the magic system. A group holds
- * people, not rites.
+ * No React or storage. A group holds people; a membership also carries the two
+ * table rules a game master sets for one player: their scale and singular gifts.
  */
+
+import {
+  MAX_CASTER_LEVEL,
+  normalizeCasterLevel,
+  normalizeComponent,
+  type CasterLevel,
+  type MaterialComponent,
+} from './worldbuilding'
 
 /**
  * Where a person stands with a group.
@@ -63,6 +71,10 @@ export interface Membership {
   /** The account that answered, or null while the seat is unanswered. */
   playerUid: string | null
   playerName: string | null
+  /** The highest scale this player may work at for this table. The master sets it. */
+  playerLevel: CasterLevel
+  /** Singular materials this table's master has placed in the player's pool. */
+  singularReagents: MaterialComponent[]
   createdAt: number
   respondedAt: number | null
 }
@@ -137,6 +149,16 @@ export function normalizeMembership(input: Partial<Membership> & { id: string })
       : 'invited',
     playerUid: typeof input.playerUid === 'string' ? input.playerUid : null,
     playerName: typeof input.playerName === 'string' ? input.playerName : null,
+    // A seat made before table controls existed leaves the caster unconstrained.
+    playerLevel: normalizeCasterLevel(input.playerLevel ?? MAX_CASTER_LEVEL),
+    // These are snapshots because a player's private catalog is not readable by
+    // their game master. Only singular materials belong in a table gift.
+    singularReagents: Array.isArray(input.singularReagents)
+      ? input.singularReagents
+          .filter((component) => Boolean(component) && typeof component.id === 'string')
+          .map((component) => normalizeComponent(component))
+          .filter((component) => component.rarity === 'singular')
+      : [],
     createdAt: input.createdAt ?? now,
     respondedAt: typeof input.respondedAt === 'number' ? input.respondedAt : null,
   }

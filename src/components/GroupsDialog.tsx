@@ -7,7 +7,10 @@ import {
   type Group,
   type Membership,
 } from '../types/groups'
+import type { MaterialComponent } from '../types/worldbuilding'
+import { useWorkshop } from '../state/useWorkshop'
 import { EditorDialog } from './EditorDialog'
+import { LevelSteps } from './LevelSteps'
 
 /**
  * One form's submit: hold the press, run the write, and clear the field only if
@@ -32,11 +35,24 @@ function useSubmit(action: () => Promise<boolean>, onDone: () => void) {
 }
 
 /** One seat at a table this account runs: who was asked, and what they answered. */
-function SeatRow({ seat }: { seat: Membership }) {
-  const { revokeSeat } = useGroups()
+function SeatRow({ seat, singulars }: { seat: Membership; singulars: MaterialComponent[] }) {
+  const { revokeSeat, setPlayerLevel, grantSingularReagent, revokeSingularReagent } = useGroups()
+  const available = singulars.filter(
+    (component) => !seat.singularReagents.some((granted) => granted.id === component.id),
+  )
+  const [giftId, setGiftId] = useState('')
+
+  function giveSelected() {
+    const component = available.find((entry) => entry.id === giftId)
+    if (!component) return
+    void grantSingularReagent(seat.id, component).then((ok) => {
+      if (ok) setGiftId('')
+    })
+  }
 
   return (
-    <li className="groups__seat">
+    <li className={`groups__seat${seat.status === 'joined' ? ' groups__seat--controlled' : ''}`}>
+      <div className="groups__seatHead">
       <span className="groups__seatName">{seat.playerName ?? seat.email}</span>
       {seat.playerName ? <span className="groups__seatMail">{seat.email}</span> : null}
       <span className={`groups__status groups__status--${seat.status}`}>
@@ -51,6 +67,67 @@ function SeatRow({ seat }: { seat: Membership }) {
       >
         ✕
       </button>
+      </div>
+      {seat.status === 'joined' ? (
+        <div className="groups__controls">
+          <div className="groups__control">
+            <span className="groups__controlLabel">Table level</span>
+            <LevelSteps
+              value={seat.playerLevel}
+              onChange={(level) => void setPlayerLevel(seat.id, level)}
+              label={`Set ${seat.playerName ?? seat.email}'s table level`}
+            />
+          </div>
+
+          <div className="groups__control">
+            <span className="groups__controlLabel">Singular reagents</span>
+            {seat.singularReagents.length > 0 ? (
+              <div className="groups__gifts">
+                {seat.singularReagents.map((component) => (
+                  <span className="groups__gift" key={component.id}>
+                    {component.name}
+                    <button
+                      type="button"
+                      className="groups__giftRemove"
+                      aria-label={`Take back ${component.name}`}
+                      title={`Take back ${component.name}`}
+                      onClick={() => void revokeSingularReagent(seat.id, component.id)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            ) : null}
+            {available.length > 0 ? (
+              <div className="groups__grant">
+                <select
+                  aria-label={`Singular reagent to give ${seat.playerName ?? seat.email}`}
+                  value={giftId}
+                  onChange={(event) => setGiftId(event.target.value)}
+                >
+                  <option value="">Choose a singular reagent</option>
+                  {available.map((component) => (
+                    <option key={component.id} value={component.id}>
+                      {component.name}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  className="btn btn--small btn--primary"
+                  disabled={!giftId}
+                  onClick={giveSelected}
+                >
+                  Give
+                </button>
+              </div>
+            ) : (
+              <span className="groups__hint">No other singular reagents in your codex.</span>
+            )}
+          </div>
+        </div>
+      ) : null}
     </li>
   )
 }
@@ -58,6 +135,7 @@ function SeatRow({ seat }: { seat: Membership }) {
 /** A table this account runs: its roster, the way to add to it, and the way to end it. */
 function MasteredGroup({ group }: { group: Group }) {
   const { rosterFor, invitePlayer, renameGroup, disbandGroup } = useGroups()
+  const { components } = useWorkshop()
   const [address, setAddress] = useState('')
   // One state, not a flag beside a field: non-null is the rename mode, and
   // opening it seeds the field fresh so it can never hold a stale name.
@@ -66,6 +144,7 @@ function MasteredGroup({ group }: { group: Group }) {
   const roster = rosterFor(group.id)
   const seated = seatedPlayers(roster).length
   const offered = offeredSeats(roster).length
+  const singulars = components.filter((component) => component.rarity === 'singular')
 
   const invite = useSubmit(
     () => invitePlayer(group.id, address),
@@ -125,7 +204,7 @@ function MasteredGroup({ group }: { group: Group }) {
       {roster.length > 0 ? (
         <ul className="groups__seats">
           {roster.map((seat) => (
-            <SeatRow key={seat.id} seat={seat} />
+            <SeatRow key={seat.id} seat={seat} singulars={singulars} />
           ))}
         </ul>
       ) : (

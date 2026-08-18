@@ -1,5 +1,6 @@
 import { createContext } from 'react'
 import type { Group, Membership } from '../types/groups'
+import type { CasterLevel, MaterialComponent } from '../types/worldbuilding'
 
 /** The answer a player may give a seat offered to them. A master revokes instead. */
 export type InvitationAnswer = 'joined' | 'declined'
@@ -36,8 +37,7 @@ export interface GroupsValue {
   /**
    * Whether this account runs a table.
    *
-   * The one thing about groups the workshop reads: a singular reagent is a game
-   * master's to hand out, so a codex shows none until this is true. Known at
+   * A game master may see and distribute their singular reagents. Known at
    * sign-in rather than at the dialog, since the tray asks before anything has
    * opened one.
    */
@@ -49,6 +49,10 @@ export interface GroupsValue {
   invitations: Membership[]
   /** Seats this account took: the groups it plays in. */
   playing: Membership[]
+  /** Singular materials granted across the groups this account has joined. */
+  grantedSingulars: MaterialComponent[]
+  /** The authoritative table level, or null outside a group. */
+  groupCasterLevel: CasterLevel | null
 
   /** Founds a group with this account as its game master. */
   createGroup: (name: string) => Promise<boolean>
@@ -60,6 +64,12 @@ export interface GroupsValue {
   invitePlayer: (groupId: string, email: string) => Promise<boolean>
   /** Takes a seat back, answered or not. The game master's to call. */
   revokeSeat: (id: string) => Promise<boolean>
+  /** Sets a joined player's table level. The game master's to call. */
+  setPlayerLevel: (id: string, level: CasterLevel) => Promise<boolean>
+  /** Adds one of the game master's singular materials to a joined player's pool. */
+  grantSingularReagent: (id: string, component: MaterialComponent) => Promise<boolean>
+  /** Takes a singular material back from a player's pool. */
+  revokeSingularReagent: (id: string, componentId: string) => Promise<boolean>
   /** Answers a seat offered to this account. Leaving a group declines the seat it took. */
   answerInvitation: (id: string, answer: InvitationAnswer) => Promise<boolean>
 }

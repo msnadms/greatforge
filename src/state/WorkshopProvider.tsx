@@ -81,12 +81,18 @@ interface WorkshopProviderProps {
    * hidden, so a caller that never states it cannot leak them.
    */
   singularsVisible?: boolean
+  /** Singular material snapshots granted by the groups this account plays in. */
+  grantedSingulars?: MaterialComponent[]
+  /** The authoritative table level a game master has set, if this account plays in a group. */
+  groupCasterLevel?: CasterLevel | null
 }
 
 export function WorkshopProvider({
   children,
   repository = firestoreRepository,
   singularsVisible = false,
+  grantedSingulars = [],
+  groupCasterLevel = null,
 }: WorkshopProviderProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -155,9 +161,12 @@ export function WorkshopProvider({
   /** Applies local state only once a persisted write lands; failures surface via `error`. */
   const write = useWrite(setError)
 
+  // A gifted singular is a snapshot carried by a group seat, not a component in
+  // this account's private catalog. It nevertheless resolves exactly like one
+  // while the gift stands, and drops away if its game master takes it back.
   const componentsById = useMemo(
-    () => new Map(components.map((component) => [component.id, component])),
-    [components],
+    () => new Map([...components, ...grantedSingulars].map((component) => [component.id, component])),
+    [components, grantedSingulars],
   )
 
   /**
@@ -172,9 +181,9 @@ export function WorkshopProvider({
   const catalog = useMemo(
     () =>
       singularsVisible
-        ? components
-        : components.filter((component) => component.rarity !== 'singular'),
-    [components, singularsVisible],
+        ? [...components, ...grantedSingulars]
+        : [...components.filter((component) => component.rarity !== 'singular'), ...grantedSingulars],
+    [components, grantedSingulars, singularsVisible],
   )
 
   const catalogById = useMemo(
@@ -205,7 +214,9 @@ export function WorkshopProvider({
 
   /** A character writes at its own scale or any lesser one; the sandbox reads the catalog whole. */
   const maxCasterLevel =
-    playMode === 'player' ? activeCharacter?.level ?? DEFAULT_CASTER_LEVEL : MAX_CASTER_LEVEL
+    playMode === 'player'
+      ? (groupCasterLevel ?? activeCharacter?.level ?? DEFAULT_CASTER_LEVEL)
+      : MAX_CASTER_LEVEL
 
   const canAuthorComponents = playMode === 'sandbox'
 
@@ -324,7 +335,7 @@ export function WorkshopProvider({
         id: newId(),
         name: name.trim() || 'Unnamed caster',
         specialty: characterSpecialty,
-        level,
+        level: groupCasterLevel ?? level,
         // A satchel starts empty. Reagents are taken from the pool by hand.
         inventory: {},
         createdAt: now,
@@ -346,7 +357,7 @@ export function WorkshopProvider({
       if (saved) resetDraft(character.specialty, character.id)
       return true
     },
-    [profile, repository, resetDraft, saveProfile, write],
+    [groupCasterLevel, profile, repository, resetDraft, saveProfile, write],
   )
 
   /**
@@ -361,7 +372,7 @@ export function WorkshopProvider({
       const next: Character = {
         ...existing,
         name: patch.name !== undefined ? patch.name.trim() || existing.name : existing.name,
-        level: patch.level ?? existing.level,
+        level: groupCasterLevel === null ? patch.level ?? existing.level : existing.level,
         updatedAt: Date.now(),
       }
       const ok = await write('Could not amend the character', () => repository.saveCharacter(next))
@@ -371,7 +382,7 @@ export function WorkshopProvider({
       )
       return true
     },
-    [characters, repository, write],
+    [characters, groupCasterLevel, repository, write],
   )
 
   /**
@@ -436,6 +447,7 @@ export function WorkshopProvider({
   const takeReagent = useCallback(
     async (componentId: string, quantity = 1) => {
       if (!activeCharacter) return
+      if (!catalogById.has(componentId)) return
       const wanted = Math.floor(quantity)
       if (!Number.isFinite(wanted) || wanted < 1) return
       const held = stockCount(activeCharacter.inventory, componentId)
@@ -445,7 +457,7 @@ export function WorkshopProvider({
       if (stockCount(next, componentId) === held) return
       await setInventory('Could not take that reagent', next)
     },
-    [activeCharacter, setInventory],
+    [activeCharacter, catalogById, setInventory],
   )
 
   /** Puts back the stated number, or the whole stack when none is stated. */
@@ -831,6 +843,7 @@ export function WorkshopProvider({
       allowedForms,
       chooseSpecialty,
       maxCasterLevel,
+      groupCasterLevel,
       components: catalog,
       placeableComponents,
       canAuthorComponents,
@@ -879,6 +892,7 @@ export function WorkshopProvider({
       allowedForms,
       chooseSpecialty,
       maxCasterLevel,
+      groupCasterLevel,
       catalog,
       placeableComponents,
       canAuthorComponents,

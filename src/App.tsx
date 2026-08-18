@@ -93,17 +93,20 @@ function Workshop() {
 }
 
 /**
- * The one thing the two providers share, and it crosses here rather than through
- * a context read: singular reagents are a game master's to hand out, so the
- * workshop is told whether this account runs a table and knows nothing else about
- * groups. `WorkshopProvider` still mounts on its own, which the preview entry
- * points rely on.
+ * The group facts that affect the bench cross here rather than through a context
+ * read: running a table reveals a master's singulars, while playing at one adds
+ * its gifts and level cap. `WorkshopProvider` still mounts on its own, which the
+ * preview entry points rely on.
  */
 function Bench() {
-  const { mastersATable } = useGroups()
+  const { mastersATable, grantedSingulars, groupCasterLevel } = useGroups()
 
   return (
-    <WorkshopProvider singularsVisible={mastersATable}>
+    <WorkshopProvider
+      singularsVisible={mastersATable}
+      grantedSingulars={grantedSingulars}
+      groupCasterLevel={groupCasterLevel}
+    >
       <Workshop />
     </WorkshopProvider>
   )

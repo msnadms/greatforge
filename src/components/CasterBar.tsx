@@ -19,7 +19,7 @@ const MODE_HINT: Record<PlayMode, string> = {
 
 /** The caster the player bench is standing at, and the way between casters. */
 function CharacterControl() {
-  const { activeCharacter, characters, selectCharacter } = useWorkshop()
+  const { activeCharacter, characters, selectCharacter, groupCasterLevel } = useWorkshop()
   const [editing, setEditing] = useState<'new' | 'current' | null>(null)
 
   return (
@@ -39,7 +39,7 @@ function CharacterControl() {
           {characters.map((character) => (
             <option key={character.id} value={character.id}>
               {character.name} · {CASTER_SPECIALTY_META[character.specialty].label} ·{' '}
-              {character.level}
+              {groupCasterLevel ?? character.level}
             </option>
           ))}
         </select>

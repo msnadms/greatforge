@@ -94,6 +94,8 @@ export interface WorkshopValue {
   chooseSpecialty: (specialty: CasterSpecialty) => Promise<boolean>
   /** Highest scale this bench may write at — the character's level, or 5 in sandbox. */
   maxCasterLevel: CasterLevel
+  /** A group table's authoritative scale, or null when this account is not playing in one. */
+  groupCasterLevel: CasterLevel | null
 
   /** The catalog as this bench may read it: everything but the singulars, unless it runs a table. */
   components: MaterialComponent[]

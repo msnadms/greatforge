@@ -1856,6 +1856,17 @@
   color: var(--rune);
 }
 
+/* A player's table owns the scale while they belong to a group, so the editor
+   reads it as a value rather than offering a private control beside it. */
+.field__value {
+  width: fit-content;
+  padding: 4px 7px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--gilt);
+  font-size: 12px;
+}
+
 .editor__role {
   margin: 10px 0 0;
   font-size: 12px;
@@ -2115,6 +2126,88 @@ body.is-dragging * {
 
 .groups__seat {
   font-size: 12px;
+}
+
+/* A joined seat opens into its table controls; unanswered invitations remain a
+   compact single line. */
+.groups__seat--controlled {
+  align-items: stretch;
+  flex-direction: column;
+  gap: 7px;
+  padding: 7px 0;
+}
+
+.groups__seat + .groups__seat {
+  border-top: 1px solid var(--border);
+}
+
+.groups__controls,
+.groups__control,
+.groups__grant,
+.groups__gifts,
+.groups__seatHead {
+  display: flex;
+  gap: 8px;
+}
+
+.groups__controls {
+  align-items: stretch;
+  flex-wrap: wrap;
+  padding-left: 4px;
+}
+
+.groups__seatHead {
+  min-width: 0;
+}
+
+.groups__control {
+  flex: 1 1 190px;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.groups__controlLabel {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: var(--rune);
+}
+
+.groups__gifts {
+  flex-wrap: wrap;
+}
+
+.groups__gift {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 4px 2px 6px;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  color: var(--gilt);
+}
+
+.groups__giftRemove {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.groups__grant {
+  width: 100%;
+}
+
+.groups__grant select {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.groups__hint {
+  font-size: 11px;
+  color: var(--text);
 }
 
 .groups__seatName {

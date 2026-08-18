@@ -16,6 +16,7 @@ import {
 import {
   MAX_CASTER_LEVEL,
   type CasterLevel,
+  type Character,
   type MaterialComponent,
 } from '../types/worldbuilding'
 import { useAuth } from './useAuth'
@@ -158,21 +159,6 @@ export function GroupsProvider({
 
   const invitations = useMemo(() => offeredSeats(seatsByOffer), [seatsByOffer])
   const playing = useMemo(() => seatedPlayers(seatsByOffer), [seatsByOffer])
-  const grantedSingulars = useMemo(() => {
-    const byId = new Map<string, MaterialComponent>()
-    for (const seat of playing) {
-      for (const component of seat.singularReagents) byId.set(component.id, component)
-    }
-    return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name))
-  }, [playing])
-  const groupCasterLevel = useMemo<CasterLevel | null>(() => {
-    if (playing.length === 0) return null
-    return playing.reduce<CasterLevel>(
-      (lowest, seat) => Math.min(lowest, seat.playerLevel) as CasterLevel,
-      MAX_CASTER_LEVEL,
-    )
-  }, [playing])
-
   // Founding a table hands the account its singular reagents, and disbanding the
   // last one takes them back, both without a further read.
   const mastersATable = mastered.length > 0
@@ -290,6 +276,8 @@ export function GroupsProvider({
         // an address can be invited before anyone signs in with it.
         playerUid: null,
         playerName: null,
+        characterId: null,
+        characterName: null,
         playerLevel: MAX_CASTER_LEVEL,
         singularReagents: [],
         createdAt: Date.now(),
@@ -373,32 +361,76 @@ export function GroupsProvider({
     [updateSeatControl],
   )
 
-  /**
-   * Answers a seat offered to this account, which is the only field a player may
-   * write on it. Taking a seat stamps the uid behind the address, so the game
-   * master's roster names an account rather than an invitation.
-   */
-  const answerInvitation = useCallback(
-    async (id: string, answer: InvitationAnswer) => {
+  /** A character's private lock makes this check race-safe in the repository. */
+  const assignCharacter = useCallback(
+    async (id: string, character: Character) => {
       if (!uid) return false
       const seat = seats.find((entry) => entry.id === id)
       if (!seat) return false
+      const occupied = seats.find(
+        (entry) =>
+          entry.id !== id && entry.status === 'joined' && entry.characterId === character.id,
+      )
+      if (occupied) {
+        setError(`${character.name} already belongs to ${occupied.groupName}.`)
+        return false
+      }
+      let next: Membership
+      try {
+        next = await repository.assignCharacter({ ...seat, playerUid: uid, playerName: displayName }, character)
+        setError(null)
+      } catch (cause) {
+        setError(`Could not assign that character to the group: ${describeError(cause)}`)
+        return false
+      }
+      setSeats((current) => current.map((entry) => (entry.id === id ? next : entry)))
+      return true
+    },
+    [displayName, repository, seats, uid],
+  )
+
+  /** Joining reserves a character; declining an unanswered invitation needs no lock. */
+  const answerInvitation = useCallback(
+    async (id: string, answer: InvitationAnswer, character?: Character) => {
+      const seat = seats.find((entry) => entry.id === id)
+      if (!seat) return false
+      if (answer === 'joined') {
+        if (!character) {
+          setError('Choose a character before joining this group.')
+          return false
+        }
+        return assignCharacter(id, character)
+      }
+
+      if (seat.status === 'joined') {
+        let next: Membership
+        try {
+          next = await repository.leaveMembership(seat)
+          setError(null)
+        } catch (cause) {
+          setError(`Could not leave the group: ${describeError(cause)}`)
+          return false
+        }
+        setSeats((current) => current.map((entry) => (entry.id === id ? next : entry)))
+        return true
+      }
+
+      if (!uid) return false
       const next: Membership = {
         ...seat,
-        status: answer,
+        status: 'declined',
         playerUid: uid,
         playerName: displayName,
+        characterId: null,
+        characterName: null,
         respondedAt: Date.now(),
       }
-      const ok = await write(
-        answer === 'joined' ? 'Could not join the group' : 'Could not give up the seat',
-        () => repository.saveMembership(next),
-      )
+      const ok = await write('Could not decline the invitation', () => repository.saveMembership(next))
       if (!ok) return false
       setSeats((current) => current.map((entry) => (entry.id === id ? next : entry)))
       return true
     },
-    [displayName, repository, seats, uid, write],
+    [assignCharacter, displayName, repository, seats, uid, write],
   )
 
   const value: GroupsValue = useMemo(
@@ -412,8 +444,6 @@ export function GroupsProvider({
       rosterFor,
       invitations,
       playing,
-      grantedSingulars,
-      groupCasterLevel,
       createGroup,
       renameGroup,
       disbandGroup,
@@ -422,6 +452,7 @@ export function GroupsProvider({
       setPlayerLevel,
       grantSingularReagent,
       revokeSingularReagent,
+      assignCharacter,
       answerInvitation,
     }),
     [
@@ -434,8 +465,6 @@ export function GroupsProvider({
       rosterFor,
       invitations,
       playing,
-      grantedSingulars,
-      groupCasterLevel,
       createGroup,
       renameGroup,
       disbandGroup,
@@ -444,6 +473,7 @@ export function GroupsProvider({
       setPlayerLevel,
       grantSingularReagent,
       revokeSingularReagent,
+      assignCharacter,
       answerInvitation,
     ],
   )

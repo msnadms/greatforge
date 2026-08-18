@@ -43,7 +43,10 @@ service cloud.firestore {
         && request.resource.data.status == 'invited';
       allow delete: if signedIn() && mastered();
 
-      // The game master may edit their own invitation but not move or readdress it; the invited player may only set their own answer.
+      // The game master may edit their own invitation but not move or readdress it.
+      // A player may only change their own answer and selected character. The
+      // repository serializes character locks in a transaction, so two tabs
+      // cannot successfully assign one character to different groups.
       allow update: if signedIn() && (
         (mastered()
           && request.resource.data.gameMasterUid == resource.data.gameMasterUid
@@ -51,10 +54,21 @@ service cloud.firestore {
           && request.resource.data.email == resource.data.email)
         || (addressedToMe()
           && request.resource.data.diff(resource.data).affectedKeys()
-               .hasOnly(['status', 'playerUid', 'playerName', 'respondedAt'])
-          && request.resource.data.status in ['joined', 'declined']
-          && request.resource.data.playerUid == request.auth.uid)
+               .hasOnly(['status', 'playerUid', 'playerName', 'characterId', 'characterName', 'respondedAt'])
+          && request.resource.data.playerUid == request.auth.uid
+          && (
+            (request.resource.data.status == 'joined'
+              && request.resource.data.characterId is string
+              && request.resource.data.characterName is string
+              && exists(/databases/$(database)/documents/users/$(request.auth.uid)/characters/$(request.resource.data.characterId))
+            )
+            || (request.resource.data.status == 'declined'
+              && request.resource.data.characterId == null
+              && request.resource.data.characterName == null)
+          )
+        )
       );
     }
+
   }
 }

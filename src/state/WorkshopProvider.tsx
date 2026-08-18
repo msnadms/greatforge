@@ -24,6 +24,7 @@ import {
   type Spell,
   type SpellForm,
 } from '../types/worldbuilding'
+import type { Membership } from '../types/groups'
 import {
   WorkshopContext,
   type BenchMode,
@@ -81,18 +82,15 @@ interface WorkshopProviderProps {
    * hidden, so a caller that never states it cannot leak them.
    */
   singularsVisible?: boolean
-  /** Singular material snapshots granted by the groups this account plays in. */
-  grantedSingulars?: MaterialComponent[]
-  /** The authoritative table level a game master has set, if this account plays in a group. */
-  groupCasterLevel?: CasterLevel | null
+  /** Seats this account has joined; only the active character's seat affects its bench. */
+  groupMemberships?: Membership[]
 }
 
 export function WorkshopProvider({
   children,
   repository = firestoreRepository,
   singularsVisible = false,
-  grantedSingulars = [],
-  groupCasterLevel = null,
+  groupMemberships = [],
 }: WorkshopProviderProps) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -161,6 +159,15 @@ export function WorkshopProvider({
   /** Applies local state only once a persisted write lands; failures surface via `error`. */
   const write = useWrite(setError)
 
+  const activeCharacterId = profile.mode === 'player' ? profile.activeCharacterId : null
+  const grantedSingulars = useMemo(
+    () =>
+      groupMemberships.find(
+        (seat) => seat.status === 'joined' && seat.characterId === activeCharacterId,
+      )?.singularReagents ?? [],
+    [activeCharacterId, groupMemberships],
+  )
+
   // A gifted singular is a snapshot carried by a group seat, not a component in
   // this account's private catalog. It nevertheless resolves exactly like one
   // while the gift stands, and drops away if its game master takes it back.
@@ -199,6 +206,25 @@ export function WorkshopProvider({
         ? characters.find((entry) => entry.id === profile.activeCharacterId) ?? null
         : null,
     [characters, playMode, profile.activeCharacterId],
+  )
+
+  /** A seat affects only the character assigned to it, never the whole account. */
+  const activeGroupMembership = useMemo(
+    () =>
+      activeCharacter
+        ? groupMemberships.find(
+            (seat) => seat.status === 'joined' && seat.characterId === activeCharacter.id,
+          ) ?? null
+        : null,
+    [activeCharacter, groupMemberships],
+  )
+  const groupCasterLevel = activeGroupMembership?.playerLevel ?? null
+  const groupCasterLevelForCharacter = useCallback(
+    (characterId: string) =>
+      groupMemberships.find(
+        (seat) => seat.status === 'joined' && seat.characterId === characterId,
+      )?.playerLevel ?? null,
+    [groupMemberships],
   )
 
   /**
@@ -335,7 +361,7 @@ export function WorkshopProvider({
         id: newId(),
         name: name.trim() || 'Unnamed caster',
         specialty: characterSpecialty,
-        level: groupCasterLevel ?? level,
+        level,
         // A satchel starts empty. Reagents are taken from the pool by hand.
         inventory: {},
         createdAt: now,
@@ -357,7 +383,7 @@ export function WorkshopProvider({
       if (saved) resetDraft(character.specialty, character.id)
       return true
     },
-    [groupCasterLevel, profile, repository, resetDraft, saveProfile, write],
+    [profile, repository, resetDraft, saveProfile, write],
   )
 
   /**
@@ -392,6 +418,13 @@ export function WorkshopProvider({
    */
   const deleteCharacter = useCallback(
     async (id: string) => {
+      const seat = groupMemberships.find(
+        (entry) => entry.status === 'joined' && entry.characterId === id,
+      )
+      if (seat) {
+        setError(`${seat.characterName ?? 'That caster'} is still seated at ${seat.groupName}. Leave or assign another character before striking them.`)
+        return false
+      }
       const ok = await write('Could not strike the character', () => repository.deleteCharacter(id))
       if (!ok) return false
 
@@ -422,6 +455,7 @@ export function WorkshopProvider({
       activeCharacter?.id,
       characters,
       draft.characterId,
+      groupMemberships,
       profile,
       repository,
       resetDraft,
@@ -844,6 +878,7 @@ export function WorkshopProvider({
       chooseSpecialty,
       maxCasterLevel,
       groupCasterLevel,
+      groupCasterLevelForCharacter,
       components: catalog,
       placeableComponents,
       canAuthorComponents,
@@ -893,6 +928,7 @@ export function WorkshopProvider({
       chooseSpecialty,
       maxCasterLevel,
       groupCasterLevel,
+      groupCasterLevelForCharacter,
       catalog,
       placeableComponents,
       canAuthorComponents,

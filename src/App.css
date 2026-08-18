@@ -2090,6 +2090,23 @@ body.is-dragging * {
   gap: 8px;
 }
 
+.groups__assignment {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.groups__assignment select {
+  min-width: 0;
+  max-width: 150px;
+}
+
+.groups__assignment .btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 /* A table this account runs, roster and all, boxed so its seats read as its own
    rather than as more rows in the list. */
 .groups__group {

@@ -47,5 +47,9 @@ export interface GroupRepository {
   /** Every seat offered to this account's own address, answered or not. */
   listInvitations(): Promise<Membership[]>
   saveMembership(membership: Membership): Promise<void>
+  /** Joins or reassigns a seat, atomically reserving the character for that one group. */
+  assignCharacter(membership: Membership, character: Character): Promise<Membership>
+  /** Leaves a seat and releases its character for another group. */
+  leaveMembership(membership: Membership): Promise<Membership>
   deleteMembership(id: string): Promise<void>
 }

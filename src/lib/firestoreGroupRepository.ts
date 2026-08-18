@@ -4,6 +4,7 @@ import {
   doc,
   getDocs,
   query,
+  runTransaction,
   setDoc,
   where,
   writeBatch,
@@ -21,6 +22,7 @@ import {
 import { currentEmail, db, requireUid } from './firebase'
 import { stripId } from './firestoreDoc'
 import type { GroupRepository } from './repository'
+import type { Character } from '../types/worldbuilding'
 
 /**
  * Firestore-backed group storage, laid out as:
@@ -50,6 +52,12 @@ import type { GroupRepository } from './repository'
 type StoredGroup = Omit<Group, 'id'>
 type StoredMembership = Omit<Membership, 'id'>
 
+interface CharacterGroupAssignment {
+  playerUid: string
+  characterId: string
+  membershipId: string
+}
+
 function toGroup(snapshot: QueryDocumentSnapshot<DocumentData>): Group {
   return normalizeGroup({ ...(snapshot.data() as Partial<StoredGroup>), id: snapshot.id })
 }
@@ -68,6 +76,11 @@ export class FirestoreGroupRepository implements GroupRepository {
 
   private memberships(): CollectionReference<DocumentData> {
     return collection(db, 'memberships')
+  }
+
+  /** One private lock per character makes membership exclusive across all groups. */
+  private characterAssignment(uid: string, characterId: string) {
+    return doc(db, 'users', uid, 'characterGroupAssignments', characterId)
   }
 
   async listGroups(): Promise<Group[]> {
@@ -139,6 +152,138 @@ export class FirestoreGroupRepository implements GroupRepository {
 
   async saveMembership(membership: Membership): Promise<void> {
     await setDoc(doc(this.memberships(), membership.id), stripId(normalizeMembership(membership)))
+  }
+
+  /**
+   * The character lock and the public seat move together. A player cannot race
+   * two browser tabs into putting the same caster at two tables, while the
+   * master still only ever sees their one email-addressed seat at a table.
+   */
+  async assignCharacter(membership: Membership, character: Character): Promise<Membership> {
+    const uid = requireUid()
+    const seatRef = doc(this.memberships(), membership.id)
+    const assignmentRef = this.characterAssignment(uid, character.id)
+
+    return runTransaction(db, async (transaction) => {
+      const [seatSnapshot, assignmentSnapshot] = await Promise.all([
+        transaction.get(seatRef),
+        transaction.get(assignmentRef),
+      ])
+      if (!seatSnapshot.exists()) throw new Error('That group seat is no longer available.')
+
+      const current = normalizeMembership({
+        ...(seatSnapshot.data() as Partial<StoredMembership>),
+        id: seatSnapshot.id,
+      })
+      if (current.status !== 'invited' && current.status !== 'joined') {
+        throw new Error('That group seat is no longer available.')
+      }
+
+      if (assignmentSnapshot.exists()) {
+        const assignment = assignmentSnapshot.data() as CharacterGroupAssignment
+        if (assignment.membershipId !== current.id) {
+          const oldSeatSnapshot = await transaction.get(doc(this.memberships(), assignment.membershipId))
+          if (oldSeatSnapshot.exists()) {
+            const oldSeat = normalizeMembership({
+              ...(oldSeatSnapshot.data() as Partial<StoredMembership>),
+              id: oldSeatSnapshot.id,
+            })
+            if (
+              oldSeat.status === 'joined' &&
+              oldSeat.playerUid === uid &&
+              oldSeat.characterId === character.id
+            ) {
+              throw new Error(`${character.name} already belongs to ${oldSeat.groupName}.`)
+            }
+          }
+        }
+      }
+
+      const oldAssignmentRef = current.characterId
+        ? this.characterAssignment(uid, current.characterId)
+        : null
+      const oldAssignmentSnapshot = oldAssignmentRef ? await transaction.get(oldAssignmentRef) : null
+      const next: Membership = {
+        ...current,
+        status: 'joined',
+        playerUid: uid,
+        playerName: membership.playerName,
+        characterId: character.id,
+        characterName: character.name.trim() || 'Unnamed caster',
+        respondedAt: Date.now(),
+      }
+
+      // A player may update only their answer and character fields. Do not
+      // round-trip master-controlled gifts through a normalizer here: an older
+      // snapshot can gain defaults and look like the player changed it.
+      transaction.update(seatRef, {
+        status: next.status,
+        playerUid: next.playerUid,
+        playerName: next.playerName,
+        characterId: next.characterId,
+        characterName: next.characterName,
+        respondedAt: next.respondedAt,
+      })
+      transaction.set(assignmentRef, {
+        playerUid: uid,
+        characterId: character.id,
+        membershipId: current.id,
+      } satisfies CharacterGroupAssignment)
+      if (
+        oldAssignmentRef &&
+        oldAssignmentRef.path !== assignmentRef.path &&
+        oldAssignmentSnapshot?.exists() &&
+        (oldAssignmentSnapshot.data() as CharacterGroupAssignment).membershipId === current.id
+      ) {
+        transaction.delete(oldAssignmentRef)
+      }
+      return next
+    })
+  }
+
+  async leaveMembership(membership: Membership): Promise<Membership> {
+    const uid = requireUid()
+    const seatRef = doc(this.memberships(), membership.id)
+
+    return runTransaction(db, async (transaction) => {
+      const seatSnapshot = await transaction.get(seatRef)
+      if (!seatSnapshot.exists()) throw new Error('That group seat is no longer available.')
+      const current = normalizeMembership({
+        ...(seatSnapshot.data() as Partial<StoredMembership>),
+        id: seatSnapshot.id,
+      })
+      if (current.status !== 'joined' || current.playerUid !== uid) {
+        throw new Error('You are no longer seated at that group.')
+      }
+      const assignmentRef = current.characterId
+        ? this.characterAssignment(uid, current.characterId)
+        : null
+      const assignmentSnapshot = assignmentRef ? await transaction.get(assignmentRef) : null
+
+      const next: Membership = {
+        ...current,
+        status: 'declined',
+        characterId: null,
+        characterName: null,
+        respondedAt: Date.now(),
+      }
+      transaction.update(seatRef, {
+        status: next.status,
+        characterId: next.characterId,
+        characterName: next.characterName,
+        respondedAt: next.respondedAt,
+      })
+      // Do not remove a newer assignment if this seat was reassigned in another
+      // tab before this transaction retried.
+      if (
+        assignmentRef &&
+        assignmentSnapshot?.exists() &&
+        (assignmentSnapshot.data() as CharacterGroupAssignment).membershipId === current.id
+      ) {
+        transaction.delete(assignmentRef)
+      }
+      return next
+    })
   }
 
   async deleteMembership(id: string): Promise<void> {

@@ -43,7 +43,7 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
   // opened; anything else counts nothing rather than counting the wrong shelf.
   const shelved = character && character.id === activeCharacter?.id ? spells.length : null
   const carried = character ? stockTotal(character.inventory) : 0
-  const effectiveLevel = groupCasterLevel ?? level
+  const tableControlsCharacter = character?.id === activeCharacter?.id && groupCasterLevel !== null
 
   /** Closes on a write that landed, and holds the form open on one that did not. */
   function run(action: Promise<boolean>, failure: string) {
@@ -74,8 +74,8 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
     }
     run(
       character
-        ? updateCharacter(character.id, groupCasterLevel === null ? { name, level } : { name })
-        : createCharacter(name, specialty, effectiveLevel),
+        ? updateCharacter(character.id, tableControlsCharacter ? { name } : { name, level })
+        : createCharacter(name, specialty, level),
       'That could not be saved. Your changes are still here.',
     )
   }
@@ -146,12 +146,12 @@ export function CharacterEditor({ character, onClose }: CharacterEditorProps) {
         <span className="field__label">
           Scale
           <span className="field__note">
-            {groupCasterLevel === null
+            {!tableControlsCharacter
               ? 'Writes rites at this scale or any below it.'
               : 'Your game master sets this table level.'}
           </span>
         </span>
-        {groupCasterLevel === null ? (
+        {!tableControlsCharacter ? (
           <LevelSteps value={level} label="Caster scale" onChange={setLevel} />
         ) : (
           <output className="field__value">Table level {groupCasterLevel}</output>

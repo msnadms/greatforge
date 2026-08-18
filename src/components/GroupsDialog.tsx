@@ -53,8 +53,9 @@ function SeatRow({ seat, singulars }: { seat: Membership; singulars: MaterialCom
   return (
     <li className={`groups__seat${seat.status === 'joined' ? ' groups__seat--controlled' : ''}`}>
       <div className="groups__seatHead">
-      <span className="groups__seatName">{seat.playerName ?? seat.email}</span>
-      {seat.playerName ? <span className="groups__seatMail">{seat.email}</span> : null}
+      <span className="groups__seatName">{seat.characterName ?? seat.playerName ?? seat.email}</span>
+      {seat.characterName ? <span className="groups__seatMail">{seat.playerName ?? seat.email}</span> : null}
+      {seat.playerName && !seat.characterName ? <span className="groups__seatMail">{seat.email}</span> : null}
       <span className={`groups__status groups__status--${seat.status}`}>
         {MEMBERSHIP_LABEL[seat.status]}
       </span>
@@ -75,7 +76,7 @@ function SeatRow({ seat, singulars }: { seat: Membership; singulars: MaterialCom
             <LevelSteps
               value={seat.playerLevel}
               onChange={(level) => void setPlayerLevel(seat.id, level)}
-              label={`Set ${seat.playerName ?? seat.email}'s table level`}
+              label={`Set ${seat.characterName ?? seat.playerName ?? seat.email}'s table level`}
             />
           </div>
 
@@ -102,7 +103,7 @@ function SeatRow({ seat, singulars }: { seat: Membership; singulars: MaterialCom
             {available.length > 0 ? (
               <div className="groups__grant">
                 <select
-                  aria-label={`Singular reagent to give ${seat.playerName ?? seat.email}`}
+                  aria-label={`Singular reagent to give ${seat.characterName ?? seat.playerName ?? seat.email}`}
                   value={giftId}
                   onChange={(event) => setGiftId(event.target.value)}
                 >
@@ -129,6 +130,45 @@ function SeatRow({ seat, singulars }: { seat: Membership; singulars: MaterialCom
         </div>
       ) : null}
     </li>
+  )
+}
+
+/** A player chooses which of their private characters occupies an email-addressed seat. */
+function CharacterAssignment({ seat, join }: { seat: Membership; join: boolean }) {
+  const { assignCharacter, answerInvitation } = useGroups()
+  const { characters } = useWorkshop()
+  const [characterId, setCharacterId] = useState(seat.characterId ?? '')
+  const character = characters.find((entry) => entry.id === characterId)
+
+  function save() {
+    if (!character) return
+    if (join) void answerInvitation(seat.id, 'joined', character)
+    else void assignCharacter(seat.id, character)
+  }
+
+  return (
+    <div className="groups__assignment">
+      <select
+        aria-label={`Character for ${seat.groupName}`}
+        value={characterId}
+        onChange={(event) => setCharacterId(event.target.value)}
+      >
+        <option value="">Choose a character</option>
+        {characters.map((character) => (
+          <option key={character.id} value={character.id}>
+            {character.name}
+          </option>
+        ))}
+      </select>
+      <button
+        type="button"
+        className="btn btn--small btn--primary"
+        disabled={!character}
+        onClick={save}
+      >
+        {join ? 'Join' : seat.characterId ? 'Change character' : 'Assign character'}
+      </button>
+    </div>
   )
 }
 
@@ -284,13 +324,7 @@ export function GroupsDialog({ onClose }: { onClose: () => void }) {
               <li key={seat.id} className="groups__row">
                 <span className="groups__name">{seat.groupName}</span>
                 <span className="groups__count">Asked by {seat.gameMasterName}</span>
-                <button
-                  type="button"
-                  className="btn btn--small btn--primary"
-                  onClick={() => void answerInvitation(seat.id, 'joined')}
-                >
-                  Join
-                </button>
+                <CharacterAssignment seat={seat} join />
                 <button
                   type="button"
                   className="btn btn--small"
@@ -311,7 +345,11 @@ export function GroupsDialog({ onClose }: { onClose: () => void }) {
             {playing.map((seat) => (
               <li key={seat.id} className="groups__row">
                 <span className="groups__name">{seat.groupName}</span>
-                <span className="groups__count">Run by {seat.gameMasterName}</span>
+                <span className="groups__count">
+                  Run by {seat.gameMasterName}
+                  {seat.characterName ? ` · ${seat.characterName}` : ' · no character assigned'}
+                </span>
+                <CharacterAssignment seat={seat} join={false} />
                 <button
                   type="button"
                   className="btn btn--small btn--danger"

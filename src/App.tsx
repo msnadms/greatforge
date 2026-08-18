@@ -62,7 +62,7 @@ function Workshop() {
               whole workshop rather than on the working in front of it. */}
           <div className="workshop__account">
             <BenchToggle />
-            {/* A group belongs to the account, the same as signing out does. */}
+            {/* Group invitations reach the account; each seat is assigned to a character in the dialog. */}
             <GroupsButton />
             <AccountBadge />
           </div>
@@ -95,17 +95,16 @@ function Workshop() {
 /**
  * The group facts that affect the bench cross here rather than through a context
  * read: running a table reveals a master's singulars, while playing at one adds
- * its gifts and level cap. `WorkshopProvider` still mounts on its own, which the
- * preview entry points rely on.
+ * its gifts and level cap only for the character assigned to that seat.
+ * `WorkshopProvider` still mounts on its own, which preview entry points rely on.
  */
 function Bench() {
-  const { mastersATable, grantedSingulars, groupCasterLevel } = useGroups()
+  const { mastersATable, playing } = useGroups()
 
   return (
     <WorkshopProvider
       singularsVisible={mastersATable}
-      grantedSingulars={grantedSingulars}
-      groupCasterLevel={groupCasterLevel}
+      groupMemberships={playing}
     >
       <Workshop />
     </WorkshopProvider>

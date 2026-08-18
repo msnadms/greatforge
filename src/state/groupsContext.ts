@@ -1,6 +1,6 @@
 import { createContext } from 'react'
 import type { Group, Membership } from '../types/groups'
-import type { CasterLevel, MaterialComponent } from '../types/worldbuilding'
+import type { CasterLevel, Character, MaterialComponent } from '../types/worldbuilding'
 
 /** The answer a player may give a seat offered to them. A master revokes instead. */
 export type InvitationAnswer = 'joined' | 'declined'
@@ -49,10 +49,6 @@ export interface GroupsValue {
   invitations: Membership[]
   /** Seats this account took: the groups it plays in. */
   playing: Membership[]
-  /** Singular materials granted across the groups this account has joined. */
-  grantedSingulars: MaterialComponent[]
-  /** The authoritative table level, or null outside a group. */
-  groupCasterLevel: CasterLevel | null
 
   /** Founds a group with this account as its game master. */
   createGroup: (name: string) => Promise<boolean>
@@ -70,8 +66,10 @@ export interface GroupsValue {
   grantSingularReagent: (id: string, component: MaterialComponent) => Promise<boolean>
   /** Takes a singular material back from a player's pool. */
   revokeSingularReagent: (id: string, componentId: string) => Promise<boolean>
-  /** Answers a seat offered to this account. Leaving a group declines the seat it took. */
-  answerInvitation: (id: string, answer: InvitationAnswer) => Promise<boolean>
+  /** Assigns one private character to an accepted seat. */
+  assignCharacter: (id: string, character: Character) => Promise<boolean>
+  /** Answers a seat offered to this account. Joining requires a character. */
+  answerInvitation: (id: string, answer: InvitationAnswer, character?: Character) => Promise<boolean>
 }
 
 export const GroupsContext = createContext<GroupsValue | null>(null)

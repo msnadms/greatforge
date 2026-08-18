@@ -96,6 +96,8 @@ export interface WorkshopValue {
   maxCasterLevel: CasterLevel
   /** A group table's authoritative scale, or null when this account is not playing in one. */
   groupCasterLevel: CasterLevel | null
+  /** A character's table scale, or null when it has not been assigned a joined seat. */
+  groupCasterLevelForCharacter: (characterId: string) => CasterLevel | null
 
   /** The catalog as this bench may read it: everything but the singulars, unless it runs a table. */
   components: MaterialComponent[]

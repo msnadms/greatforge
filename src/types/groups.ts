@@ -7,8 +7,8 @@
  * private to a single uid; only this file's two records cross that line, which
  * is why they hang off the root of the database rather than under `users/{uid}`.
  *
- * No React or storage. A group holds people; a membership also carries the two
- * table rules a game master sets for one player: their scale and singular gifts.
+ * No React or storage. A group holds characters; a membership also carries the
+ * two table rules a game master sets for the character a player assigned to it.
  */
 
 import {
@@ -46,7 +46,7 @@ export interface Group {
 }
 
 /**
- * One person's standing in one group, and the invitation that put them there.
+ * One player's standing in one group, and the character they assigned to it.
  *
  * **Keyed by email address, not by uid.** A game master invites a person before
  * that person's account is knowable, so the address is what the record is
@@ -71,7 +71,11 @@ export interface Membership {
   /** The account that answered, or null while the seat is unanswered. */
   playerUid: string | null
   playerName: string | null
-  /** The highest scale this player may work at for this table. The master sets it. */
+  /** The player's private character selected for this seat, or null before it is assigned. */
+  characterId: string | null
+  /** A snapshot for the game master's roster; character records remain private. */
+  characterName: string | null
+  /** The highest scale this character may work at for this table. The master sets it. */
   playerLevel: CasterLevel
   /** Singular materials this table's master has placed in the player's pool. */
   singularReagents: MaterialComponent[]
@@ -149,6 +153,8 @@ export function normalizeMembership(input: Partial<Membership> & { id: string })
       : 'invited',
     playerUid: typeof input.playerUid === 'string' ? input.playerUid : null,
     playerName: typeof input.playerName === 'string' ? input.playerName : null,
+    characterId: typeof input.characterId === 'string' ? input.characterId : null,
+    characterName: typeof input.characterName === 'string' ? input.characterName : null,
     // A seat made before table controls existed leaves the caster unconstrained.
     playerLevel: normalizeCasterLevel(input.playerLevel ?? MAX_CASTER_LEVEL),
     // These are snapshots because a player's private catalog is not readable by

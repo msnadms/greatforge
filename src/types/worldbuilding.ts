@@ -3,9 +3,9 @@
  *
  * Magic is stoichiometric: every material demands certain currencies before it
  * will react, and yields others when it does. A spell is a ring of eight slots
- * that the current walks once, clockwise, losing one unit per slot crossed.
- * Whatever the ring cannot supply is taken from the caster; whatever the ring
- * cannot reabsorb escapes, and what escapes is what the spell does.
+ * that the current walks once, clockwise, paying a flat toll to cross into
+ * each slot. Whatever the ring cannot supply is taken from the caster; whatever
+ * the ring cannot reabsorb escapes, and what escapes is what the spell does.
  */
 
 export const CURRENCIES = ['heat', 'motion', 'charge', 'light', 'mass'] as const
@@ -111,9 +111,9 @@ export type LossRelief = 'spared' | 'plain' | 'halved' | 'doubled'
 
 /**
  * What a crossing costs under a relief: nothing, half its stated price, its
- * stated price, or twice it. `halved` exists for the ward, whose condition
- * asks for a mostly-open ring rather than the invocation's closed one and so
- * earns a smaller cut of the lap rather than the whole of it.
+ * stated price, or twice it. `halved` is for a form whose bar is markedly
+ * easier than the full spare it would otherwise match; see `FormCondition.reward`
+ * in `data/spellForms.ts` for which form earns it and why.
  */
 export function transitScale(relief: LossRelief): number {
   if (relief === 'spared') return 0
@@ -149,10 +149,10 @@ export function completionFactor(filled: number, spill: LossRelief): number {
 /**
  * Most of any one currency a single material may demand or yield.
  *
- * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT = 16 units, and a
- * crossing that nothing downstream demands falls back to the oldest current in
- * flight — the reagent at slot I — so the ceiling has to clear 16 or slot I can
- * never hold anything that reaches the mouth. Scaled together with
+ * A full lap costs RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT, and a
+ * crossing nothing downstream demands still falls on the current in flight
+ * (`spendProportional`), so the ceiling has to clear 16 or a reagent at the
+ * front of the ring can never reach the mouth. Scaled together with
  * `TRANSIT_LOSS_REAGENT`/`TRANSIT_LOSS_GAP` so the ratio between a reagent's
  * ceiling and the lap's cost stays fixed; see the eighth law and `LEVEL_POWER`
  * below.
@@ -190,9 +190,9 @@ export function maxLedgerEntry(rarity: Rarity | undefined): number {
  * an open slot does not move with level at all. See `sim/balance.ts`'s
  * by-level table for what the curve buys.
  *
- * The five steps are a plain 15 points apart (40/55/70/85/100) and land the
- * ceiling on exactly the whole catalog — there is no "true" number a
- * reagent's ledger is scaled down from; level five simply reads it whole.
+ * The steps are evenly spaced and the top of the table is exactly the whole
+ * catalog — there is no "true" number a reagent's ledger is scaled down from;
+ * the highest level simply reads it whole.
  */
 export const CASTER_LEVELS = [1, 2, 3, 4, 5] as const
 
@@ -479,7 +479,7 @@ export function addToLedger(ledger: Ledger, currency: Currency, amount: number):
  * The ceiling is the owning material's, not a constant: a `singular` reagent is
  * clamped at `MAX_LEDGER_ENTRY_SINGULAR`. The rarity is therefore required at
  * every call site rather than defaulted, since defaulting it silently cuts a
- * singular ledger to 24 wherever one is forgotten.
+ * singular ledger back to the ordinary ceiling wherever one is forgotten.
  */
 export function normalizeLedger(ledger: Ledger | undefined, rarity: Rarity | undefined): Ledger {
   const next: Ledger = {}

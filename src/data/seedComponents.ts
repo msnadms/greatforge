@@ -46,16 +46,16 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *              for nothing — the wire of the circle. One per currency, plus
  *              two that carry a pair at once. What a pair is worth against a
  *              single wire is stated at Steam Main below.
- *   Sinks      swallow and give nothing back. Five of them, one per currency,
- *              all demanded by the dirge, which is spared the spill only while
- *              a sink stands in the ring and is fully fed.
+ *   Sinks      swallow and give nothing back. Five of them, one per currency.
+ *              The dirge's condition names a fully fed one, so each is priced
+ *              to take a ring built around it rather than a slot dropped in.
  *
  * The numbers are tuned against facts about the resolver that are easy to miss:
  *
- *  - Transit loss is flat against the current as a whole: a full lap dissipates
- *    8 units total, taken off whatever has been in flight longest. The working
- *    band runs 8–24 against that: a reagent at the front of the ring pays the
- *    whole lap, so below 8 it cannot reach the mouth at all.
+ *  - Transit loss is flat against the current as a whole, and a full lap costs
+ *    RING_SLOT_COUNT × TRANSIT_LOSS_REAGENT. A reagent at the front of the ring
+ *    pays the whole of it, so
+ *    anything yielding less than that cannot reach the mouth unaided.
  *  - A material may occupy only one slot, so no chain can be repeated — a fire
  *    may feed a fire, but only along eight distinct reagents.
  *  - Nothing common or uncommon sources charge or mass, and nothing at any
@@ -66,19 +66,12 @@ type SeedSpec = Omit<MaterialComponent, 'id' | 'isSeed' | 'createdAt' | 'updated
  *  - Heat is the common input: nearly everything below the sources burns it,
  *    making it the easiest currency to raise and the least profitable to keep.
  *  - Only seven reagents (three sources, four fuels) never cost anything to
- *    place, one short of a full ring — reaching slot VIII always means taking
- *    on at least one converter. Rarity does not track role: seven reagents are
- *    `rare` and six are `singular` — two doing at a single slot what two
- *    `rare` reagents would together, one an outlier kept for being one of a
- *    kind rather than for fitting the curve, and three abyssal entries running
- *    in the hundreds. See `sim/balance.ts`'s `naiveChainProbe`, the regression
- *    check that a full ring can't be built on autopilot.
- *  - `singular` is the one rarity exempt from `MAX_LEDGER_ENTRY`, clamped at
- *    `MAX_LEDGER_ENTRY_SINGULAR` (1000) instead of 24. Nothing measured moves
- *    with it: the frontier generator and every cohort in `sim/balance.ts` draw
- *    from the common and uncommon envelope, so a reagent priced two orders of
- *    magnitude above the band sits outside every number this catalog is tuned
- *    against, by construction rather than by luck.
+ *    place, one short of a full ring, so reaching slot VIII always means taking
+ *    on at least one converter. `sim/balance.ts`'s `naiveChainProbe` is the
+ *    regression check on that.
+ *  - Rarity does not track role: seven reagents are `rare` and six `singular`,
+ *    the latter exempt from `MAX_LEDGER_ENTRY` and outside every cohort the
+ *    harness measures.
  *
  * These are example data, not fixed rules; they can be edited and deleted like
  * anything the user authors.
@@ -452,9 +445,9 @@ const SEEDS: SeedSpec[] = [
   // billed like anything else's. Transit is flat per crossing rather than per
   // currency, so carrying two currencies saves no more than carrying one, and
   // either shortfall is billed while the return is identical. A pair therefore
-  // has to be cheaper than a single wire to be worth reaching for: at heat 10
-  // and motion 14 this was the least useful reagent in the catalog barring the
-  // sinks, and at 8 and 8 it is the most useful of the relays.
+  // has to be cheaper than a single wire to be worth reaching for. Priced above
+  // that line this was the least useful reagent in the catalog barring the
+  // sinks; priced below it, it is the most useful of the relays.
   {
     name: 'Steam Main',
     description:

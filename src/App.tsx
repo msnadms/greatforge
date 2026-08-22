@@ -7,6 +7,7 @@ import { SpellCircle } from './components/SpellCircle'
 import { SpellList } from './components/SpellList'
 import { Spellbook } from './components/Spellbook'
 import { StorageAlert } from './components/StorageAlert'
+import { ThemeToggle } from './components/ThemeToggle'
 import { BenchToggle, CasterBar } from './components/CasterBar'
 import { CastButton } from './components/CastButton'
 import { AuthProvider } from './state/AuthProvider'
@@ -61,6 +62,7 @@ function Workshop() {
           {/* The bench switch rides with the account: both are switches on the
               whole workshop rather than on the working in front of it. */}
           <div className="workshop__account">
+            <ThemeToggle />
             <BenchToggle />
             {/* Group invitations reach the account; each seat is assigned to a character in the dialog. */}
             <GroupsButton />

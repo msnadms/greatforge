@@ -29,7 +29,7 @@ import {
  *
  * Four forms carry one further clause apiece, and none carries more than one:
  * a met elegy turns toll beyond its first wound into force (`ELEGY_GRIEF`), a
- * met dirge keeps up to two of the reagents it laid (`DIRGE_KEPT_REAGENTS`), a
+ * met dirge keeps up to two of the reagents it laid (`dirgeKeptSlots`), a
  * met ward is paid back part of what its two threshold slots were fed
  * (`WARD_DOOR`), and a met invocation gathers what it delivers into a single
  * currency (`INVOCATION_FOLD`). None of them is a fourth `LossRelief`.
@@ -92,29 +92,14 @@ export interface FormCondition {
    * Which loss (or losses) the circle is spared when the condition holds, and
    * dealt double when it does not.
    *
-   * `transit` is what the current pays to cross into a slot; sparing it is worth
-   * at most one lap, so the invocation spares it for a ring you have actually
-   * filled. `spill` is what leaks out of the holes at the mouth — but sparing or
-   * doubling it alone does nothing once the ring is closed, since a full ring
-   * never spills regardless of the condition. No form spares `spill` by itself
-   * for exactly that reason: litany and benediction both shipped that way and a
-   * caster could dodge either condition for free by ignoring it and filling
-   * every slot, netting the same output a caster who actually met the
-   * condition did.
-   *
-   * A `transit`-only condition has the mirror defect wherever the condition
-   * itself keeps the ring open. The ward shipped that way: it must leave two
-   * slots empty, so it always paid the spill it could not relieve, and its
-   * best rings were closed circles ignoring the threshold outright. Only the
-   * invocation, whose condition is the closed ring, spares `transit` alone.
-   *
-   * `both` waives or doubles transit and spill together, which is what makes a
-   * spill-flavoured condition actually bite: closing the ring to dodge the
-   * doubled spill still leaves every crossing paying the doubled transit.
-   * Dirge and elegy earn it on a bar harder than most — see their entries in
-   * `FORM_META` below; litany and benediction earn it for the reason above.
-   * See CLAUDE.md's "Spell forms are behavioural" for the numbers that caught
-   * the loophole.
+   * **Never `spill` alone.** A full ring never spills, so sparing or doubling
+   * it is worth nothing once the ring is closed, and a caster can dodge any
+   * spill-flavoured condition for free by ignoring it and filling every slot.
+   * `transit` alone has the mirror defect wherever the condition itself keeps
+   * the ring open, so only the invocation, whose condition *is* the closed
+   * ring, spares it. Everything else takes `both`, which is what makes a
+   * condition bite: closing the ring to dodge the doubled spill still leaves
+   * every crossing paying the doubled transit.
    *
    * There is no value that spares a toll — a reagent releasing a yield the ring
    * never fed it would make units out of nothing, and `underfed: 'measure'` is
@@ -210,16 +195,14 @@ export const UNDERFED_RULE: Record<SpellFormMeta['underfed'], string> = {
 }
 
 /**
- * Elegy turns grief beyond the rite's unavoidable first wound into a small,
- * capped intensification. The floor is the least level-five demand in the
- * starter catalog (Slow Match); `reaction.ts` scales it with the working.
+ * Elegy turns toll into a small, capped intensification: `tollPerManifestation`
+ * toll buys one unit of manifestation, up to `maximumManifestation`.
  *
- * This is deliberately additive rather than a multiplier. A multiplier makes
- * the largest, most underfed elegies grow fastest; this gives a costly rite a
- * little more force without making an 80-toll outlier the only expert play.
+ * Deliberately a price and a ceiling rather than a multiplier. A multiplier
+ * makes the largest, most underfed elegies grow fastest, which would leave an
+ * 80-toll outlier as the only expert play.
  *
- * Both numbers are the full-power ones, and `GRIEF_POWER` scales both: the rate
- * a working pays per unit, and the ceiling on how much it can buy.
+ * Both numbers are the full-power ones, and `GRIEF_POWER` scales both.
  */
 export const ELEGY_GRIEF = {
   baseToll: 0,
@@ -229,26 +212,21 @@ export const ELEGY_GRIEF = {
 
 /**
  * What a working at `level` pays for grief, and how much of it it may buy, as a
- * fraction of the full-power numbers. The rate is the half that runs *against*
- * level: multiplying the price by 0.6 at level one means a lesser working buys
- * a unit of manifestation for less toll than a greater one does.
+ * fraction of the full-power numbers.
  *
- * The reason is the elegy's guaranteed wound. It forbids a source, so its first
- * reagent always starves and the rite always pays something — a fixed price,
- * unrelated to how much the ring goes on to deliver. `LEVEL_POWER` shrinks what
- * the ring delivers by 60% at level one; the wound it is paying past does not
- * shrink in kind, since `TRANSIT_POWER` leaves a low-level lap proportionally
- * dearer than the reagents crossing it. A flat rate therefore hands the whole of
- * grief's compensation to the caster who needed it least.
+ * **The rate is the one quantity in the system that runs *against* level.**
+ * Multiplying the price by 0.6 at level one means a lesser working buys a unit
+ * of manifestation for less toll than a greater one does. The reason is the
+ * elegy's guaranteed wound: it forbids a source, so its first reagent always
+ * starves and the rite always pays a fixed price unrelated to what the ring
+ * goes on to deliver. `LEVEL_POWER` shrinks the delivery while `TRANSIT_POWER`
+ * leaves a low-level lap proportionally dearer, so a flat rate would hand the
+ * whole of grief's compensation to the caster needing it least.
  *
- * The steps are 10 points where `LEVEL_POWER`'s are 15, and both curves end at
- * 1. Shallower on purpose: the rate improves as level falls, but never fast
- * enough to make a lesser elegy the stronger one outright.
- *
- * The ceiling (`griefCeiling`) reads the same table forwards, so it moves with
- * the working like every other quantity: 30 at level one, 50 at level five. It
- * bounds the cheap rate rather than compounding it, which is what keeps a
- * level-one elegy the smaller rite even where its grief is the better bargain.
+ * The steps are 10 points where `LEVEL_POWER`'s are 15, and both end at 1: the
+ * rate improves as level falls, never fast enough to make a lesser elegy the
+ * stronger one. `griefCeiling` reads the same table forwards, so the ceiling
+ * moves *with* the working and bounds the cheap rate rather than compounding it.
  */
 export const GRIEF_POWER: Record<CasterLevel, number> = {
   1: 0.6,
@@ -277,14 +255,12 @@ export function griefCeiling(level: CasterLevel): number {
  * source a ring may hold from being parked on a doorpost for free. To collect,
  * a threshold slot has to be a hungry reagent the ring genuinely fed, and slot
  * I can only be fed once the current comes round, so the bonus asks for a
- * chain that reaches the door it started at. That is the hardest thing a ward
- * builds toward and nothing else in the resolver pays for it.
+ * chain that reaches the door it started at.
  *
- * It is bought with real output rather than granted. Current drawn into a
- * doorpost's demand is current that would otherwise have reached the mouth,
- * since a met ward spares both losses, and starving the middle of the ring to
- * feed the doors cuts what the middle releases under `measure`, which is what
- * was feeding them.
+ * It is bought rather than granted: a met ward spares both losses, so current
+ * drawn into a doorpost is current that would otherwise have reached the mouth,
+ * and starving the middle to feed the doors cuts what the middle releases under
+ * `measure`.
  *
  * The rate and the ceiling both run *with* level (`LEVEL_POWER`, unlike
  * grief's reversed `GRIEF_POWER`): what a door receives is scaled reagent
@@ -307,36 +283,31 @@ export function doorCeiling(level: CasterLevel): number {
  * answers in one.
  *
  * **This is a trade, not a bonus, and deliberately so** — the invocation is the
- * strongest form on the hill-climbed frontier and does not need power. The fold
- * costs it a few units and hands back a single-currency manifestation instead.
+ * strongest form on the frontier and does not need power.
  *
- * Nothing here makes units out of nothing, which is why there is no third
- * bonus field on the reaction to declare: the lost units go to `bled`, where
- * transit and spill already land, and the first law balances untouched.
- * Currency crossing currency needs no new concept either, since that is what a
- * converter does at a slot; a met invocation is the whole ring doing it at the
- * mouth.
+ * Nothing here makes units out of nothing, which is why the reaction declares
+ * no third bonus field for it: the lost units go to `bled`, where transit and
+ * spill already land, and the first law balances untouched.
  */
 export const INVOCATION_FOLD = {
   lostPerCurrency: 1,
 } as const
 
 /**
- * A met dirge leaves up to this many non-sink reagents intact after it is spoken.
- *
- * The choice is deliberately deterministic: the first fully fed sink clockwise
- * from I anchors it, and the nearest non-sinks on either side are kept.
- * Reordering the circle is already the craft the ring asks of the caster, so a
- * random preservation would hide a resource decision that the layout can state
- * plainly and the player can plan around.
- */
-export const DIRGE_KEPT_REAGENTS = 2
-
-/**
  * The non-sink slots a met dirge keeps: the nearest reagent on each side of its
  * first fully fed sink, wrapping around gaps. `fedUnderBaseline` is the same
  * verdict the condition used, so a sink can never grant preservation by being
  * fed only after the dirge has already spared its losses.
+ *
+ * **The choice is deliberately deterministic.** The first fully fed sink
+ * clockwise from I anchors it, and the nearest non-sink on either side is kept.
+ * Reordering the circle is already the craft the ring asks of the caster, so a
+ * random preservation would hide a resource decision the layout can state
+ * plainly and the player can plan around.
+ *
+ * The cap of two is the two directions, not a constant: there was a
+ * `DIRGE_KEPT_REAGENTS = 2` beside this that nothing ever read, since the
+ * number is structural here rather than tunable.
  */
 export function dirgeKeptSlots(placements: Placement[], context: ConditionContext): number[] {
   const anchor = [...placements]
@@ -544,41 +515,16 @@ const SPECIALTY_LITANY_CONDITIONS: Partial<Record<CasterSpecialty, FormCondition
     statement: 'At least one relay stands in the ring, at least three reagents demand a currency another reagent yields, and at least one slot is empty.',
     loss: 'both',
     reward: 'halved',
-    // Nothing between voices, the plain price across a silence.
+    // Nothing between voices, the plain price across a silence. `metTransit`
+    // rather than a plain reward because the two halves differ: the reagents
+    // the condition names cross for nothing, and the silence it requires costs
+    // full price. The condition's own open-ring clause is load-bearing — a free
+    // lap on a closed ring would simply be the invocation on an easier bar.
     //
-    // **The free crossing shipped without the silence, and that handed the
-    // invocation's whole prize to a far easier bar.** Nothing in the condition
-    // asked the ring to stay open, so its best rings were closed eight-reagent
-    // circles where no gap exists for the `gap` half of this rule to charge:
-    // every crossing free, `bled` 0, on one relay and three linked reagents
-    // rather than eight filled slots. All ten of its frontier rings were that
-    // shape, at 57 net against the invocation's own 54.6. The rule it broke is
-    // the one the ward's entry states: a form that does not require an open
-    // ring must not buy a free lap, or it dominates the form built for the
-    // closed one.
-    //
-    // Charging half between reagents was the first fix and it treated the
-    // symptom. It left the litany buildable on the invocation's own ring and
-    // simply worse there, losing on 4986 of 5000 random full rings, which is
-    // a redundant form rather than a rival one. Asking for the silence is the
-    // fix at the root: the free crossing is no longer something the invocation
-    // could also have, because the invocation's ring has no silence in it.
-    //
-    // What it buys, on the common and uncommon envelope `sim/generateNearOptimal.ts`
-    // measures, at level 5: the best ring an invoker can build from a stock of
-    // 5, 6 or 7 reagents is now this form (32, 41 and 50 net, against the
-    // Herald Benediction's 32 and the prayer's 35 at seven), where the closed
-    // ring stays the invocation's at 8 (60). Per reagent spent the two forms
-    // nearly level, 7.1 against 7.5, and weighted by rarity they tie at 4.8.
-    // Its own full-ring option falls to 34, which is the point.
-    //
-    // A relay standing here saves nothing it was not already saving: the
-    // stated reagent price is 0, so `statedTransitCost`'s relay branch and
-    // this pair agree to the unit. That branch is still right to answer the
-    // relay first (law 2 binds every stated pair, not this one), it just has
-    // nothing to change here. `metTransit` rather than a plain reward because
-    // the two halves differ: the reagents the condition names cross for
-    // nothing, and the silence it requires costs full price.
+    // A relay standing here saves nothing it was not already saving: the stated
+    // reagent price is 0, so `statedTransitCost`'s relay branch and this pair
+    // agree to the unit. That branch is still right to answer the relay first,
+    // since law 2 binds every stated pair and not only this one.
     metTransit: { reagent: 0, gap: TRANSIT_LOSS_GAP },
     test: (placements) =>
       slotsWithRole(placements, 'relay').length >= 1 &&
@@ -729,28 +675,16 @@ export const FORM_META: Record<SpellForm, SpellFormMeta> = {
     condition: {
       statement: 'Slot I and slot VIII are filled, and at least two slots are empty.',
       // `both`, and spared outright. The condition forbids the ring from ever
-      // closing, so the spill is the one loss a ward can never walk away from:
-      // six reagents keep three quarters of what they hold, and no placement
-      // improves on that. Relieving only the transit left the form relieving
-      // the loss it barely pays and paying the loss it cannot relieve, which
-      // is why it read last of the warden's four — 24.7 net on the hill-climbed
-      // frontier against the same caster's plain prayer at 44.0 — and why 4 of
-      // its 10 best rings ignored the threshold and just filled the circle.
-      // Sparing both moves that frontier to 41.5 net with every one of the 10
-      // meeting the condition, under the Vigil Litany (51.2) and the
-      // invocation (57.4).
+      // closing, so the spill is the one loss a ward can never walk away from
+      // and no placement improves on it. Relieving only the transit left the
+      // form relieving the loss it barely pays and paying the loss it cannot,
+      // and its best rings ignored the threshold and filled the circle instead.
       //
-      // Spared rather than the half it earned before: the ward asks for a
-      // smaller ring than the invocation, but it pays for that permanently,
-      // in two slots it may never fill and in slot I standing first, where a
-      // reagent fires before anything has crossed into the ring. The
-      // invocation pays neither.
-      //
-      // A met ward is also paid back part of what those two slots were fed,
-      // by `WARD_DOOR`, settled in the resolver. Sparing both losses closed
-      // the loophole but left the form last of the warden's four on net; the
-      // doorway is what makes the threshold itself worth building toward
-      // rather than merely worth complying with.
+      // Spared rather than halved: the ward asks for a smaller ring than the
+      // invocation but pays for it permanently, in two slots it may never fill
+      // and in slot I standing first, where a reagent fires before anything has
+      // crossed into the ring. A met ward is also paid back part of what those
+      // two slots were fed, by `WARD_DOOR`, settled in the resolver.
       loss: 'both',
       test: (placements) => {
         const filled = occupancy(placements)

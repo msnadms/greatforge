@@ -326,23 +326,22 @@ export const EMBER_LIGHT: EmberPalette = {
  *
  * **The core is much darker than a flame's core looks, because the blending
  * adds it up.** Under `add`, lightness is the white a blob contributes, and a
- * core at 93 stacked a few deep took the whole trail to white and left no hue
- * in it at all. The core lets a dense stretch reach white where the head is and
+ * core near a real flame's took the whole trail to white when stacked a few
+ * deep, leaving no hue in it. The core lets a dense stretch reach white where
+ * the head is and
  * stay the current's own colour everywhere else, which is what the low
  * saturation here is for.
  *
- * **It came down from 76 to 70, and the alpha with it, when the flame was
- * thickened.** A wider blob overlaps its neighbours further, so the same core
- * stacks deeper than it used to and drifts back toward the white this number
- * exists to hold off. Thickness and this pair move together in either
- * direction.
+ * **This lightness moves with the flame's thickness and against its
+ * saturation, and it has been brought down for each in turn.** A wider blob
+ * overlaps its neighbours further, so the same core stacks deeper and drifts
+ * back toward the white this number exists to hold off; the alpha moves with
+ * it. A paler blob is a whiter one under `add`, since what a channel gives up
+ * in colour it contributes as light, so desaturating on its own hands that
+ * white straight back. Retune either and check this.
  *
- * **It came down again, 70 to 66, when the saturation did.** Under `add` a
- * paler blob is a whiter one — what a channel gives up in colour it contributes
- * as light — so desaturating on its own would have handed back the white the
- * previous paragraph is about. The two move together in this palette and only
- * this one; `EMBER_LIGHT` paints rather than adds, so its lightness is
- * unaffected by what its saturation does.
+ * Only in this palette: `EMBER_LIGHT` paints rather than adds, so its lightness
+ * is unaffected by what its saturation does.
  */
 export const EMBER_DARK: EmberPalette = {
   saturation: [3, 48],

@@ -11,6 +11,10 @@
   --border-strong: #a9977a;
   --gilt: #9a6f1f;
   --rune: #8a7554;
+  --circle-line: var(--border-strong);
+  --circle-line-glow: none;
+  --catalog-card-lightness: 90%;
+  --catalog-card-opacity: 0.5;
   /* Lightness for domain-hued accents (potency marks), tuned per theme. */
   --gem-l: 42%;
   /* Saturation for currency hues, held low so they read as pigment, not screen
@@ -35,7 +39,7 @@
 
   font: 16px/145% var(--sans);
   letter-spacing: 0.1px;
-  color-scheme: light dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
@@ -44,9 +48,27 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
+/*
+ * Candlelight: the same desk, later at night.
+ *
+ * **The palette is written twice, and the two copies must stay identical.** One
+ * answers the system setting, the other an explicit choice from `ThemeToggle`,
+ * and plain CSS cannot put a media-conditional selector and an ordinary one in
+ * the same rule. Several of these tokens are not colours — `--gem-l`,
+ * `--gem-s`, the two `--catalog-card-*`, `--shadow`, `--circle-line-glow` — so
+ * `light-dark()` would collapse about half of them and leave the rest split
+ * across two mechanisms, which reads worse than one honest pair. Add a token to
+ * one block and you must add it to the other; the light defaults on `:root`
+ * above are what a forgotten one silently falls back to.
+ *
+ * The system arm excludes `light` alone rather than any `data-theme`, so a
+ * third value written there — a future "system" marker, say — cannot quietly
+ * take dark down with it. Nothing is stamped on the root at all while the desk
+ * is following the system; see `ThemeToggle`.
+ */
 @media (prefers-color-scheme: dark) {
-  :root {
-    /* Candlelight: the same desk, later at night. */
+  :root:not([data-theme='light']) {
+    color-scheme: dark;
     --parchment: #17151a;
     --parchment-deep: #100e12;
     --panel: #1e1b22;
@@ -58,6 +80,17 @@
     --border-strong: #4b4453;
     --gilt: #d8a94a;
     --rune: #9a8ea6;
+    /* The engraved circle is drawn in candlelight rather than in the border
+       colour, and carries its own glow. Both halves are mixed off the tokens
+       above, so retuning the gilt moves the line and its halo together. */
+    --circle-line: #e5bf6a;
+    --circle-line-glow:
+      drop-shadow(0 0 1.5px color-mix(in srgb, var(--circle-line) 90%, transparent))
+      drop-shadow(0 0 5px color-mix(in srgb, var(--gilt) 45%, transparent));
+    /* A catalog card's hued fill, which needs to be darker and thinner here or it
+       glares off the panel it sits on. */
+    --catalog-card-lightness: 50%;
+    --catalog-card-opacity: 0.28;
     --gem-l: 66%;
     /* Muted hues go grey against a dark ground sooner, so a few points more. */
     --gem-s: 36%;
@@ -73,6 +106,48 @@
     --shadow:
       rgba(0, 0, 0, 0.5) 0 10px 15px -3px, rgba(0, 0, 0, 0.3) 0 4px 6px -2px;
   }
+}
+
+/* The same palette, chosen rather than inherited from the system. Keep in step
+   with the block above. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --parchment: #17151a;
+  --parchment-deep: #100e12;
+  --panel: #1e1b22;
+  --ink: #ece4d6;
+  --text: #a79d92;
+  --text-h: #f0e8db;
+  --bg: var(--parchment);
+  --border: #35303c;
+  --border-strong: #4b4453;
+  --gilt: #d8a94a;
+  --rune: #9a8ea6;
+  /* The engraved circle is drawn in candlelight rather than in the border
+     colour, and carries its own glow. Both halves are mixed off the tokens
+     above, so retuning the gilt moves the line and its halo together. */
+  --circle-line: #e5bf6a;
+  --circle-line-glow:
+    drop-shadow(0 0 1.5px color-mix(in srgb, var(--circle-line) 90%, transparent))
+    drop-shadow(0 0 5px color-mix(in srgb, var(--gilt) 45%, transparent));
+  /* A catalog card's hued fill, which needs to be darker and thinner here or it
+     glares off the panel it sits on. */
+  --catalog-card-lightness: 50%;
+  --catalog-card-opacity: 0.28;
+  --gem-l: 66%;
+  /* Muted hues go grey against a dark ground sooner, so a few points more. */
+  --gem-s: 36%;
+  --gem-s-strong: 46%;
+  --accent: #d9a441;
+  --accent-bg: rgba(217, 164, 65, 0.16);
+  --accent-border: rgba(217, 164, 65, 0.5);
+  --danger: #e07070;
+  --danger-wash: rgba(224, 112, 112, 0.18);
+  /* A heavier wash — 14% is nearly invisible over a dark panel. */
+  --named: #d8a94a;
+  --named-wash: rgba(216, 169, 74, 0.16);
+  --shadow:
+    rgba(0, 0, 0, 0.5) 0 10px 15px -3px, rgba(0, 0, 0, 0.3) 0 4px 6px -2px;
 }
 
 body {

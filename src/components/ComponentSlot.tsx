@@ -38,7 +38,7 @@ export function ComponentSlot({
   onClear,
 }: ComponentSlotProps) {
   const { preview, startDrag } = useDrag()
-  const { draft } = useWorkshop()
+  const { draft, reaction } = useWorkshop()
 
   const armed = Boolean(armedComponentId) && !readOnly
   const over = preview?.overSlot === index
@@ -46,6 +46,23 @@ export function ComponentSlot({
   const role = component ? describeRole(component) : null
   const shortfall = report?.shortfall ?? {}
   const starved = ledgerEntries(shortfall).length > 0
+  // An elegy forbids a source, so the reagent the current reaches first always
+  // starves and the rite always pays. That one toll is the form working as
+  // written, not a ring laid badly, so it is marked in the gilt every other
+  // form effect uses rather than in the red that means carelessness everywhere
+  // else.
+  //
+  // **Exactly that one slot, and only under an elegy that answered itself.**
+  // Both narrowings are load-bearing. Marking every starved slot would say the
+  // whole ring's shortfall was the form's price when only the first slot's is;
+  // marking an elegy whose condition failed — a source left standing, or slot I
+  // filled — would gild a ring that is paying doubled transit and spill for
+  // carelessness, which is the reading the red exists for.
+  const grieving =
+    starved &&
+    draft.form === 'elegy' &&
+    reaction.conditionMet === true &&
+    index === reaction.slots[0]?.slotIndex
   // Scaled to what this caster can command, memoized since a slot re-renders
   // on every pointermove during a drag.
   const { demands, yields } = useMemo(
@@ -67,7 +84,7 @@ export function ComponentSlot({
     component ? 'slot--filled' : 'slot--empty',
     over ? 'slot--over' : '',
     armed && !component ? 'slot--armed' : '',
-    starved ? 'slot--starved' : '',
+    starved ? (grieving ? 'slot--grieving' : 'slot--starved') : '',
     named ? 'slot--named' : '',
     kept ? 'slot--kept' : '',
     readOnly ? 'slot--readOnly' : '',
@@ -111,7 +128,7 @@ export function ComponentSlot({
         )
       ) : null}
       {starved && !readOnly && (
-        <span className="slot__toll" title={starvation}>
+        <span className={grieving ? 'slot__toll slot__toll--grief' : 'slot__toll'} title={starvation}>
           −{ledgerTotal(shortfall)}
         </span>
       )}

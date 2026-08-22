@@ -57,12 +57,11 @@ const RING_CORE_BIAS = 0.78
  * Enough for a whole ring alight at once, plus the burst, with room over. Far
  * larger than a comet trail needed, because the body below keeps every stretch
  * the flame has reached burning rather than letting it die behind the head.
- * The pool has to cover the hold, where the ring at full and every gout at full
- * are alight at the same time for three seconds rather than for an instant, and
- * a gout now spans four times the fan's own length at the ring's own density,
- * so its blobs are in the air for about a second each instead of a quarter of
- * one and there are twice as many of them. A five-currency rite at full is the
- * case to size this by: roughly 3000 on the ring and 5300 on the gouts.
+ *
+ * Size it against the worst case, a five-currency rite at full: the ring's live
+ * count is about `BODY_DENSITY` times its lit samples times `PARTICLE_SECONDS`,
+ * and each gout's is `EXIT_RATE` times `EXIT_SECONDS`, both held simultaneously
+ * through `HOLD_SECONDS`. Any of those going up means recomputing this.
  */
 const MAX_EMBERS = 10000
 
@@ -118,10 +117,10 @@ const DRAG = 0.12
 
 /**
  * How far along the ring a blob scatters from where it was emitted, in samples,
- * before `shade` widens it. `SAMPLE_STEP` is 1.5 degrees, which is about one
- * stage unit at the flow radius, so this is roughly a unit of sigma per sample.
- * Multiplied by `0.3 + shade`, a core blob lands within a couple of units of the
- * head and an ember can be seven or eight behind or ahead of it.
+ * before `shade` widens it. A `SAMPLE_STEP` is roughly one stage unit of arc at
+ * the flow radius, so dividing by it states this in stage units and it stays
+ * put if the sampling changes. Widened by `shade`, so a core blob lands near
+ * the head where an ember can be well behind or ahead of it.
  */
 const LENGTHWISE_SIGMA = 3.2 / SAMPLE_STEP
 
@@ -151,8 +150,8 @@ function bandSpread(shade: number): number {
  * because the band's width is not only its emission spread: a ring blob is also
  * thrown outward at `out` and carried clear over its whole life, where an exit
  * blob is pinned to its line and only leaves it by `drift`. Reusing the spread
- * alone therefore reproduced about half the width. This is the difference, as
- * one number rather than as a second set of coefficients.
+ * alone therefore came out visibly narrower. This is the difference, as one
+ * number rather than as a second set of coefficients.
  */
 const EXIT_WIDTH = 1.8
 
@@ -162,15 +161,15 @@ const EXIT_WIDTH = 1.8
  *
  * **The extra width is earned over distance rather than granted at the mouth.**
  * `EXIT_WIDTH` applied at birth put a gout's whole spread on the origin, which
- * is a point on the flow ring: the root sigma runs to seven stage units, so half
- * of that flame sat off the line on the normal pointing back into the circle,
- * and the fan read as starting a few units short of slot VIII rather than at it.
+ * is a point on the flow ring. `bandSpread` is wide enough at the ember end
+ * that half of that flame then sat off the line on the normal pointing back
+ * into the circle, and the fan read as starting short of slot VIII, not at it.
  * A ring blob does not get its width that way either. It leaves the line at the
  * band's own spread and is carried clear by `out` over its life, which is the
  * distance this ramp stands in for.
  *
- * A third of the line is long enough that the widening is not a visible flare
- * and short enough that a gout is at full width well before the fan's tip.
+ * Set long enough that the widening is not a visible flare, and short enough
+ * that a gout is at full width well before the fan's tip.
  */
 const EXIT_FLARE = 0.35
 
@@ -493,8 +492,8 @@ class FireStage {
 
   /**
    * Emits `count` blobs over the stretch the head covered this frame, rather
-   * than all of them at the head. A frame at 60Hz moves the head five degrees,
-   * and five degrees of unlit ring between clumps reads as stutter. Each blob
+   * than all of them at the head. The head clears several degrees of ring in a
+   * frame, and leaving that arc unlit between clumps reads as stutter. Each blob
    * then scatters further along the ring from there, in `lightRing`.
    */
   private emitAlong(path: JetSample[], from: number, to: number, count: number, weight: number) {
@@ -611,13 +610,11 @@ class FireStage {
           continue
         }
         const point = exitPoint(ember.exit, ember.u)
-        // **Across the line as it runs, not as it left.** A fan line turns
-        // between 20 and 100 degrees from the tangent it departs on, so a normal
-        // frozen at birth ends up pointing most of the way back down the line:
-        // at the middle of the fan it is 87% backwards, at the outer edge 98%.
-        // The offset reaches fifteen units, so what was meant to be a blob's
-        // width was dragging it that far back along its own path instead, and
-        // the whole gout sat below the mouth it was supposed to leave from.
+        // **Across the line as it runs, not as it left.** A fan line turns far
+        // enough from the tangent it departs on that a normal frozen at birth
+        // ends up pointing most of the way back down the line. What was meant to
+        // be a blob's width then drags it backwards along its own path instead,
+        // and the whole gout sits below the mouth it should leave from.
         // Clamped at 1 because past the tip the route runs straight on the
         // heading it finished with, which is what `exitPoint` does there too.
         const heading = exitHeading(ember.exit, Math.min(1, ember.u))
@@ -746,6 +743,9 @@ async function createStage(host: HTMLDivElement, frameBox: HTMLElement): Promise
 
 /** Which palette the desk is lit by, read fresh so a theme change is picked up. */
 function currentPalette(): EmberPalette {
+  const theme = document.documentElement.dataset.theme
+  if (theme === 'dark') return EMBER_DARK
+  if (theme === 'light') return EMBER_LIGHT
   return window.matchMedia('(prefers-color-scheme: dark)').matches ? EMBER_DARK : EMBER_LIGHT
 }
 

@@ -101,6 +101,23 @@
   flex: 0 0 auto;
 }
 
+.theme-toggle {
+  padding: 3px 10px;
+  border: 1px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--panel);
+  color: var(--text);
+  font-size: 11px;
+  letter-spacing: 0.4px;
+  cursor: pointer;
+  transition: background 0.2s ease, color 0.2s ease, border-color 0.2s ease;
+}
+
+.theme-toggle:hover {
+  border-color: var(--accent);
+  color: var(--text-h);
+}
+
 .account {
   display: flex;
   align-items: center;
@@ -370,8 +387,9 @@
 
 .circle__ring {
   fill: none;
-  stroke: var(--border-strong);
+  stroke: var(--circle-line);
   stroke-width: 0.25;
+  filter: var(--circle-line-glow);
 }
 
 .circle__ring--outer {
@@ -398,18 +416,20 @@
 }
 
 .circle__spoke {
-  stroke: var(--border-strong);
+  stroke: var(--circle-line);
   stroke-width: 0.08;
   opacity: 0.4;
+  filter: var(--circle-line-glow);
 }
 
 /* The mouth, cut between slot VIII and slot I, where current leaves the circle.
-   Heavier than a spoke and runs past the outer ring; takes the border colour,
-   never accent or gilt, since it's engraving rather than caster state. */
+   Heavier than a spoke and runs past the outer ring; it shares the engraved
+   line treatment rather than reading as a caster-state indicator. */
 .circle__mouth {
-  stroke: var(--border-strong);
+  stroke: var(--circle-line);
   stroke-width: 0.22;
   stroke-linecap: round;
+  filter: var(--circle-line-glow);
 }
 
 /*
@@ -602,6 +622,20 @@
     var(--shadow);
 }
 
+/*
+ * The same shortfall under an elegy. The form forbids a source, so its first
+ * reagent starves by construction and the toll is grief rather than a mistake:
+ * gilt, and a glow instead of the red edge. It cannot collide with
+ * `.slot--kept`, which only a dirge draws, and it is softer and edgeless where
+ * that one carries a crisp inner ring.
+ */
+.slot--grieving {
+  border-color: var(--gilt);
+  box-shadow:
+    0 0 28px 3px color-mix(in srgb, var(--gilt) 55%, transparent),
+    var(--shadow);
+}
+
 /* A met dirge preserves these reagents. The gold sits outside the card's own
    hue so preservation reads as a form effect, not a property of the material. */
 .slot--kept {
@@ -649,6 +683,12 @@
   font-family: var(--mono);
   font-size: 10px;
   line-height: 1.4;
+}
+
+/* The same badge under an elegy, where the shortfall is the form's own price. */
+.slot__toll--grief {
+  border-color: var(--gilt);
+  color: var(--gilt);
 }
 
 .slot__rune {
@@ -866,18 +906,6 @@
   line-height: 1.6;
 }
 
-.book__count {
-  letter-spacing: 0.6px;
-  text-transform: none;
-}
-
-.book__status {
-  font-size: 11px;
-  letter-spacing: 1px;
-  text-transform: uppercase;
-  color: var(--rune);
-}
-
 /* ---------------------------------------------------------- spellbook, read */
 
 /* The written page: no field carries its name, notes and text are told apart by
@@ -908,6 +936,102 @@
   width: 120px;
   aspect-ratio: 1;
   margin: 4px auto;
+}
+
+/*
+ * The same figure, pressed to speak the rite. A button only in player mode on
+ * an inscribed working (`ViewCircle`), so the reset here never reaches the
+ * plain div the page otherwise draws. It keeps the div's box exactly: the wash,
+ * the ring and the numbers are positioned against it and would shift if a
+ * button's own padding or border were left standing.
+ */
+.book__viewCircleWrap--castable {
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  /* Load-bearing, and not for the rings — those stay well inside the box, see
+     below. The numbers on the lower half are drawn at NUM_RADIUS + NUM_SIZE,
+     past the 50 their viewBox ends at, and a button's UA style clips its
+     overflow where the plain div did not. Without this they vanish the moment
+     the figure becomes castable. */
+  overflow: visible;
+}
+
+.book__viewCircleWrap--castable:disabled {
+  cursor: progress;
+}
+
+.book__viewCircleWrap--castable:focus-visible {
+  outline: 2px solid var(--gilt);
+  outline-offset: 6px;
+}
+
+/*
+ * A rite that can be spoken radiates. Gold rings leave the drawn ring one after
+ * another, `CAST_RIPPLES` of them staggered across one cycle by `--ripple`.
+ *
+ * A ring leaves on the drawn one, which is stroked at radius 24 in the SVG's
+ * 100-unit box, and is gone before it reaches the numbers curved at radius 44.
+ * The whole travel stays inside the figure, so nothing crosses the notes or the
+ * fold of the page. It gives up its gold over the last quarter of that travel,
+ * where a ring cut off at full strength reads as a dropped frame rather than as
+ * distance.
+ *
+ * **The travel is a fraction of the cycle, not the whole of it.** A ring is out
+ * for 1.5s of the 7.5s it owns and waits at nothing for the rest, so the
+ * interval between rings is set by the stagger (2.5s) rather than by how fast
+ * one crosses the page. Stretching the travel to fill the cycle instead reads
+ * as drifting, and the three rings are then always on the page at once.
+ *
+ * **The travel is animated on `inset` rather than on a transform.** Scaling the
+ * element scales its border with it, so a ring thickened as it went out and
+ * read as one coming toward the reader. Three 120px boxes laying out per frame
+ * is the price of a stroke that stays 2px the whole way.
+ */
+.book__castRipple {
+  position: absolute;
+  inset: 26%;
+  border-radius: 50%;
+  border: 2px solid var(--gilt);
+  /* Stated here as well as in the keyframes, so the ring reduced motion leaves
+     standing is the same gold as the ones that travel. */
+  opacity: 0.42;
+  pointer-events: none;
+  animation: cast-ripple 7.5s ease-out infinite;
+  animation-delay: calc(var(--ripple, 0) * 2.5s);
+}
+
+@keyframes cast-ripple {
+  from {
+    inset: 26%;
+    opacity: 0.42;
+  }
+  15% {
+    opacity: 0.42;
+  }
+  20% {
+    inset: 8%;
+    opacity: 0;
+  }
+  to {
+    inset: 8%;
+    opacity: 0;
+  }
+}
+
+/* Reduced motion keeps the invitation and drops the travel: one gold ring
+   standing on the drawn one, saying the same thing without moving. */
+@media (prefers-reduced-motion: reduce) {
+  .book__castRipple {
+    animation: none;
+  }
+
+  .book__castRipple:not(:first-child) {
+    display: none;
+  }
 }
 
 /*
@@ -1547,7 +1671,9 @@
   box-shadow:
     0 0 18px -4px hsl(var(--slot-hue, 40) var(--gem-s-strong) 50% / 0.5),
     var(--shadow);
-  background: hsl(var(--slot-hue, 40) var(--gem-s-strong) 90% / 0.5);
+  background: hsl(
+    var(--slot-hue, 40) var(--gem-s-strong) var(--catalog-card-lightness) / var(--catalog-card-opacity)
+  );
   /* Square, so three of them tile the rail evenly whatever the name's length. */
   aspect-ratio: 1;
   padding: 6px;

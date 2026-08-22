@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { describeError } from '../lib/describeError'
 import { firestoreRepository } from '../lib/firestoreRepository'
 import { newId } from '../lib/id'
@@ -518,48 +518,71 @@ export function WorkshopProvider({
    * reagents the caster does not own, and refused only here. What a met dirge
    * preserves is required in hand but not spent, which is the clause
    * `Reaction.keptSlots` was built for and what the circle already promises.
+   *
+   * **One casting at a time, refused here rather than in either control.** Two
+   * controls offer the gesture — `CastButton` and the ring drawn on the read
+   * page — and each holds its own `casting` flag, so neither can see the
+   * other's press. The satchel this reads is state, which `write()` only moves
+   * once the write has landed, so a second press inside that window would pass
+   * `missingReagents` against a satchel already spoken for, spend the same
+   * reagents twice into the same result, and burn twice for one deduction. The
+   * window is not narrow: a write waits on the server, so offline the first
+   * press sits at “Speaking…” and the other control is the obvious next move.
+   *
+   * A ref rather than state, since it must be true for the next call in the
+   * same tick rather than after a render. Same belt-and-braces as `patchSlots`:
+   * a control that cannot be trusted to know is refused in the state instead.
    */
+  const speaking = useRef(false)
   const castSpell = useCallback(
     async (spellId: string): Promise<CastOutcome | null> => {
-      const spell = allSpells.find((entry) => entry.id === spellId)
-      if (!spell) return null
-      if (!activeCharacter) {
-        setError('Only an enrolled caster can speak a rite.')
-        return null
-      }
-      const cast = resolvePlacements(spell.slots, componentsById)
-      if (cast.length === 0) {
-        setError('An empty circle has nothing to speak.')
-        return null
-      }
-      const resolved = computeReaction(cast, spell.form, spell.casterLevel, false, spell.specialty)
-      const cost = castingCost(cast, resolved.keptSlots)
-      const short = missingReagents(cost, activeCharacter.inventory, componentsById)
-      if (short.length > 0) {
-        setError(
-          `${activeCharacter.name} does not carry ${short
-            .map((entry) => `${entry.component.name} (${entry.carried} of ${entry.needed})`)
-            .join(', ')}.`,
+      if (speaking.current) return null
+      speaking.current = true
+      try {
+        const spell = allSpells.find((entry) => entry.id === spellId)
+        if (!spell) return null
+        if (!activeCharacter) {
+          setError('Only an enrolled caster can speak a rite.')
+          return null
+        }
+        const cast = resolvePlacements(spell.slots, componentsById)
+        if (cast.length === 0) {
+          setError('An empty circle has nothing to speak.')
+          return null
+        }
+        const resolved = computeReaction(cast, spell.form, spell.casterLevel, false, spell.specialty)
+        const cost = castingCost(cast, resolved.keptSlots)
+        const short = missingReagents(cost, activeCharacter.inventory, componentsById)
+        if (short.length > 0) {
+          setError(
+            `${activeCharacter.name} does not carry ${short
+              .map((entry) => `${entry.component.name} (${entry.carried} of ${entry.needed})`)
+              .join(', ')}.`,
+          )
+          return null
+        }
+
+        const spentTotal = spentCount(cost)
+        const ok = await setInventory(
+          'Could not spend the reagents',
+          stockAfterCasting(activeCharacter.inventory, cost),
         )
-        return null
-      }
+        if (!ok) return null
 
-      const spentTotal = spentCount(cost)
-      const ok = await setInventory(
-        'Could not spend the reagents',
-        stockAfterCasting(activeCharacter.inventory, cost),
-      )
-      if (!ok) return null
+        // The ring as it was actually spoken, for `CircleFire`. After the write,
+        // so a refused casting never burns.
+        setLastCast((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, reaction: resolved }))
 
-      // The ring as it was actually spoken, for `CircleFire`. After the write,
-      // so a refused casting never burns.
-      setLastCast((previous) => ({ nonce: (previous?.nonce ?? 0) + 1, reaction: resolved }))
-
-      return {
-        manifestationTotal: resolved.manifestationTotal,
-        tollTotal: resolved.tollTotal,
-        spentTotal,
-        keptTotal: resolved.keptSlots.length,
+        return {
+          manifestationTotal: resolved.manifestationTotal,
+          tollTotal: resolved.tollTotal,
+          spentTotal,
+          keptTotal: resolved.keptSlots.length,
+        }
+      } finally {
+        // Cleared on every path, refusals included, so a rite refused once can
+        // be spoken again the moment the caster takes what it stands on.
+        speaking.current = false
       }
     },
     [activeCharacter, allSpells, componentsById, setInventory],

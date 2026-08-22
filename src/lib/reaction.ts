@@ -43,7 +43,8 @@ import {
  *
  * `rarity` is the owning material's, and is only here because the ceiling a
  * ledger is normalized against is a fact about the material — a singular one is
- * clamped far higher, so normalizing without it would cut one back to 24 on the
+ * clamped far higher, so normalizing without it would cut one back to the
+ * ordinary ceiling on the
  * way to the walk. Which is why callers holding a whole reagent should reach for
  * `componentForCaster` instead of splitting one apart to call this.
  */
@@ -358,8 +359,9 @@ function resolveReaction(
    */
   // `transitCarry` accumulates the fractional remainder each crossing's exact
   // cost leaves after rounding, so a lap's total cost tracks the exact rate to
-  // within one unit instead of collapsing onto a couple of fixed values (2 *
-  // 0.55 and 2 * 0.7 both round to 1 on their own). One carry serves both
+  // within one unit instead of collapsing onto a couple of fixed values —
+  // `TRANSIT_LOSS_REAGENT` is small enough that several adjacent `TRANSIT_POWER`
+  // fractions round to the same integer on their own. One carry serves both
   // reagent and gap crossings since gap cost is exactly double reagent cost.
   //
   let transitCarry = 0
@@ -699,14 +701,14 @@ function resolveReaction(
   }
 
   /**
-   * A met elegy has no source, so its first underfed demand is unavoidable.
-   * Toll beyond that wound strengthens the manifestation a little, then stops:
-   * the effect is distributed over what the ring already made so it never
-   * invents a new currency or makes a cold ring speak.
+   * A met elegy turns toll into manifestation at `griefTollPerManifestation`,
+   * up to `griefCeiling`. The bonus is spread over what the ring already made,
+   * so it never invents a currency or makes a cold ring speak.
    *
-   * The rate runs against level (`GRIEF_POWER`) where the floor and the ceiling
-   * run with it (`LEVEL_POWER`, `griefCeiling`): a lesser working reads a
-   * smaller wound and buys past it more cheaply, up to a lower ceiling.
+   * `ELEGY_GRIEF.baseToll` is a floor on the toll that counts, currently 0, so
+   * every unit buys. The rate runs *against* level (`GRIEF_POWER`) where the
+   * floor and the ceiling run with it: a lesser working buys more cheaply, up
+   * to a lower ceiling.
    */
   let griefBonusTotal = 0
   if (form === 'elegy' && relief.met && ledgerTotal(manifestation) > 0) {

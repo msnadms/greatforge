@@ -1,11 +1,12 @@
-import type { CSSProperties } from 'react'
-import { useState } from 'react'
+import type { CSSProperties, ReactNode, RefObject } from 'react'
+import { useRef, useState } from 'react'
 import { CURRENCY_META, describeLedger } from '../data/currencies'
 import { FORM_META, UNDERFED_RULE, articleFor, formLabelFor } from '../data/spellForms'
 import { generateSpellName } from '../data/spellNames'
 import { useWorkshop } from '../state/useWorkshop'
 import { ledgerEntries, type Currency, type SpellForm } from '../types/worldbuilding'
 import { LevelControl } from './LevelControl'
+import { useCast, useCastable, useSatchelCovers } from './useCast'
 
 /** A point on the number circle, by angle in degrees clockwise from due right. */
 function radialPoint(degrees: number, radius: number) {
@@ -24,10 +25,11 @@ const NUM_RADIUS = 44
 const NUM_SIZE = 9
 
 /**
- * Degrees between neighbouring numbers, wide enough that two adjacent
- * two-digit numbers never overlap along the arc — at `NUM_RADIUS` this
- * clears roughly 26 stage units of arc length per step against a number at
- * most ~14 units wide, so nothing paints over its neighbour and disappears.
+ * Degrees between neighbouring numbers, wide enough that two adjacent two-digit
+ * numbers never overlap along the arc: at `NUM_RADIUS` a step of this clears
+ * more arc length than a number set at `NUM_SIZE` is wide. Both of those and
+ * this move together, so check the widest number still fits after touching any
+ * of the three.
  */
 const ITEM_GAP = 34
 
@@ -76,11 +78,19 @@ function hemisphereLayout(center: number, count: number): { path: string; offset
 
 /**
  * What a working has to move, manifestation and toll together, before the ring
- * is washed at full strength. A hill-climbed frontier manifests in the mid
- * fifties at full power and a careless ring tolls about as much again, so 100
- * is a figure a working reaches rather than an arbitrary ceiling.
+ * is washed at full strength. Set so a strong working reaches it rather than as
+ * an arbitrary ceiling: it is about double what a frontier ring manifests at
+ * full power, since a careless ring tolls roughly as much again as it delivers.
+ * `sim/balance.ts` is where those two figures come from if this needs resetting.
  */
 const FULL_WASH = 100
+
+/**
+ * Gold rings leaving a castable rite's own circle, one after another along a
+ * single cycle. Three is enough for the middle of the page to read as
+ * radiating rather than as one ring pulsing.
+ */
+const CAST_RIPPLES = 3
 
 /** Paler than the `--gem-s` the numbers outside are drawn at, since the ring
  *  carries a whole wheel at once where a numeral carries one hue. Taken off the
@@ -156,9 +166,77 @@ function consequenceAfterColon(description: string): string {
   return `${consequence[0]?.toUpperCase() ?? ''}${consequence.slice(1)}`
 }
 
+/**
+ * The ring drawn in the middle of a read page, and the second way to speak the
+ * rite standing in it. A casting is what the player bench is for, so the figure
+ * the working already draws is the thing pressed rather than a control put
+ * beside it.
+ *
+ * It is a button only where a casting is on offer at all, the test `CastButton`
+ * renders itself on. Anywhere else the same markup draws as a plain div, with
+ * nothing to press.
+ *
+ * **The rings are the satchel's answer and the press is not.** They radiate
+ * while the caster carries everything standing in the circle, so a rite that
+ * cannot be paid for goes quiet, and they stop the moment a casting spends what
+ * the ring stood on. The button underneath stays live either way: a press
+ * always reaches `castSpell`, a refusal lands in `error`, and neither is
+ * decided here. See `useSatchelCovers` for why that separation is load-bearing.
+ */
+function ViewCircle({
+  castable,
+  radiating,
+  casting,
+  title,
+  ring,
+  onSpeak,
+  children,
+}: {
+  castable: boolean
+  radiating: boolean
+  casting: boolean
+  title: string
+  ring: RefObject<HTMLButtonElement | null>
+  onSpeak: () => void
+  children: ReactNode
+}) {
+  if (!castable) return <div className="book__viewCircleWrap">{children}</div>
+
+  return (
+    <button
+      ref={ring}
+      type="button"
+      className="book__viewCircleWrap book__viewCircleWrap--castable"
+      disabled={casting}
+      title="Speak the rite. What stands in the circle is spent, less whatever a met dirge keeps."
+      aria-label={`Speak ${title || 'this rite'}`}
+      onClick={onSpeak}
+    >
+      {/* Drawn before the wash and the numbers, so a ring leaving the middle
+          passes under them rather than over the reading. */}
+      {radiating
+        ? Array.from({ length: CAST_RIPPLES }, (_, index) => (
+            <span
+              key={index}
+              className="book__castRipple"
+              style={{ '--ripple': index } as CSSProperties}
+            />
+          ))
+        : null}
+      {children}
+    </button>
+  )
+}
+
 /** An inscribed working, read rather than edited. No field carries its name here. */
 function BookView() {
   const { draft, reaction } = useWorkshop()
+  // The same test `CastButton` and `CircleFire` render themselves on. What the
+  // satchel says is a separate question, and only the rings ask it.
+  const castable = useCastable()
+  const carried = useSatchelCovers()
+  const { casting, speak } = useCast()
+  const ring = useRef<HTMLButtonElement>(null)
   const formLabel = formLabelFor(draft.form, draft.specialty)
   const manifestEntries = ledgerEntries(reaction.manifestation).sort((a, b) => b[1] - a[1])
   const tollEntries = ledgerEntries(reaction.toll).sort((a, b) => b[1] - a[1])
@@ -182,8 +260,15 @@ function BookView() {
           {formLabel.toLowerCase()}, worked at scale{' '}
           {draft.casterLevel}.
         </p>
-        {manifestEntries.length > 0 || tollEntries.length > 0 ? (
-          <div className="book__viewCircleWrap">
+        {manifestEntries.length > 0 || tollEntries.length > 0 || castable ? (
+          <ViewCircle
+            castable={castable}
+            radiating={carried}
+            casting={casting}
+            title={draft.title}
+            ring={ring}
+            onSpeak={() => void speak(ring.current)}
+          >
             {/* A conic gradient, so the wash is an element under the ring rather
                 than a fill in it — SVG has no angular gradient to give a circle. */}
             {wash ? <span className="book__viewWash" style={{ background: wash }} /> : null}
@@ -221,7 +306,7 @@ function BookView() {
                 </text>
               ))}
             </svg>
-          </div>
+          </ViewCircle>
         ) : null}
         {draft.notes ? <p className="book__viewNotes">{draft.notes}</p> : null}
       </div>

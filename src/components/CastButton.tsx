@@ -1,12 +1,13 @@
-import { useRef, useState } from 'react'
-import { useWorkshop } from '../state/useWorkshop'
-import { flash } from './flash'
+import { useRef } from 'react'
+import { useCast, useCastable } from './useCast'
 
 /**
  * Speaks the rite on the bench and spends what stood in it.
  *
- * Only ever offered in player mode, on an inscribed working being read — a
- * draft has nothing to spend against, and the sandbox carries nothing.
+ * Only ever offered in player mode, on an inscribed working being read: a
+ * draft has nothing to spend against, and the sandbox carries nothing. The
+ * ring in the middle of the read page offers the same gesture; both go through
+ * `useCast`, so neither can hold a reading of the satchel the other lacks.
  *
  * **The button predicts nothing.** It is always live, a press always reaches
  * `castSpell`, and the line beside it says what that press did. Both bugs this
@@ -21,34 +22,12 @@ import { flash } from './flash'
  * `castSpell` has answered.
  */
 export function CastButton() {
-  const { playMode, draft, draftIsInscribed, castSpell } = useWorkshop()
-  const [casting, setCasting] = useState(false)
-  const [said, setSaid] = useState<string | null>(null)
+  const castable = useCastable()
+  const { casting, said, speak } = useCast()
   const button = useRef<HTMLButtonElement>(null)
 
   // `SpellActions` only renders this in `view`, so the mode needs no test here.
-  if (playMode !== 'player' || !draftIsInscribed) return null
-
-  async function speak() {
-    setSaid(null)
-    setCasting(true)
-    const result = await castSpell(draft.id)
-    setCasting(false)
-    // Both flashes go with the outcome, not the press: gold for a rite spoken,
-    // red for one refused. `speak` waits on it either way, and a refusal has
-    // already gone to `error`, so the red is the reason's colour arriving on
-    // the button while `StorageAlert` says what it was.
-    if (!result) {
-      flash(button.current, 'btn--flashDanger')
-      return
-    }
-    flash(button.current, 'btn--flash')
-    setSaid(
-      `Manifested ${result.manifestationTotal}, tolled ${result.tollTotal}. Spent ${result.spentTotal}${
-        result.keptTotal > 0 ? `, kept ${result.keptTotal}` : ''
-      }.`,
-    )
-  }
+  if (!castable) return null
 
   return (
     <div className="cast">
@@ -58,7 +37,7 @@ export function CastButton() {
         className="btn btn--small btn--primary"
         disabled={casting}
         title="Speak the rite. What stands in the circle is spent, less whatever a met dirge keeps."
-        onClick={() => void speak()}
+        onClick={() => void speak(button.current)}
       >
         {casting ? 'Speaking…' : 'Cast'}
       </button>

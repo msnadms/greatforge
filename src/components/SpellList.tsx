@@ -42,8 +42,8 @@ const RITE_FLOW: Omit<FlowGeometry, 'idPrefix'> = {
 /**
  * A title runs the whole way round, and is cut only if it would come back over
  * its own opening. Where that falls is a question about width, not about
- * characters — the band holds around 50 letters of ordinary prose but half that
- * of wide ones — so it is measured off the drawn glyphs rather than counted.
+ * characters, since wide letters fill the band in half the count narrow ones
+ * do, so it is measured off the drawn glyphs rather than counted.
  */
 function EngravedTitle({ pathId, title }: { pathId: string; title: string }) {
   const ref = useRef<SVGTextElement>(null)

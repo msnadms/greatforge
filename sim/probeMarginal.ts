@@ -38,11 +38,6 @@ function shuffled<T>(items: T[]): T[] {
 
 const isSource = (c: MaterialComponent) => describeRole(c) === 'source'
 
-function net(placements: Placement[]): number {
-  const reaction = computeReaction(placements, 'prayer', 5)
-  return reaction.manifestationTotal - reaction.tollTotal
-}
-
 /** A legal base ring of `size` reagents drawn from the envelope, never using `avoid`. */
 function baseRing(size: number, avoid: string[], avoidSource: boolean): Placement[] {
   const pool = shuffled(
